@@ -12,7 +12,9 @@ drive.mount('/content/drive')
 !git pull -q
 !pip -q install -e . {{EXTRA}}
 !mkdir -p {ROOT}
-import os; print(os.cpu_count(), 'CPUs'); !nvidia-smi -L; !df -h /content /content/drive | tail -2"""
+import os; print(os.cpu_count(), 'CPUs')
+!nvidia-smi -L
+!df -h /content /content/drive | tail -2"""
 
 NOTEBOOKS = {
     "00_data": ("Phase 0b: build the clip stores on Drive (~1-2 h, mostly downloads). "
