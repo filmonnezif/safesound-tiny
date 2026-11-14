@@ -71,8 +71,9 @@ def cached_scores(data_root, out_root, name, role, detector, clips=None, batch=6
     out = []
     for b in range(0, len(clips), batch):
         out += detector([get(i) for i in range(b, min(b + batch, len(clips)))])
+    out = [np.asarray(o, np.float32) for o in out]
     f.parent.mkdir(parents=True, exist_ok=True)
-    pickle.dump([o.astype(np.float16) for o in out], open(f, "wb"))
+    pickle.dump(out, open(f, "wb"))
     return out
 
 
