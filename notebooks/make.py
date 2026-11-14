@@ -26,16 +26,11 @@ NOTEBOOKS = {
                      "tensorflow-hub torchlibrosa", [
         f"!python -m safesound.phase1 --root {ROOT}",
     ]),
-    "02_simulation": ("Phase 2: DSP simulation ablation (medium student trained per simulation setting).",
-                      "pyroomacoustics", [
-        f"!python -m safesound.phase2 --root {ROOT}",
-    ]),
-    "03_teacher": ("Phase 3: fine-tune the CNN14 teacher on simulated data.", "torchlibrosa pyroomacoustics", [
-        f"!python -m safesound.phase3 --root {ROOT}",
-    ]),
-    "04_students": ("Phase 4: distilled int8 students, size sweep, log-mel vs PCEN.",
-                    "pyroomacoustics", [
-        f"!python -m safesound.phase4 --root {ROOT}",
+    "02_04_train": ("Phases 2-4: DSP simulation ablation, teachers, distilled int8 students "
+                    "(several hours; each step resumes from Drive if the runtime restarts).", "torchlibrosa", [
+        f"!python -m safesound.phases 2 --root {ROOT}",
+        f"!python -m safesound.phases 3 --root {ROOT}",
+        f"!python -m safesound.phases 4 --root {ROOT}",
     ]),
 }
 

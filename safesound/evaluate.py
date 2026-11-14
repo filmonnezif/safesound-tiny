@@ -23,6 +23,7 @@ class Recording:
     scores: np.ndarray                  # (frames,) score for one class
     hop_s: float
     events: list[tuple[float, float]]   # (onset, offset) of this class; [] for negatives
+    t0: float = 0.0                     # time (s) of the first score (end of its window)
 
     @property
     def hours(self) -> float:
@@ -39,12 +40,12 @@ def merge_events(events, gap_s=MERGE_GAP_S):
     return [tuple(e) for e in out]
 
 
-def alert_times(scores, hop_s, threshold, refractory_s=REFRACTORY_S):
+def alert_times(scores, hop_s, threshold, refractory_s=REFRACTORY_S, t0=0.0):
     """Times (s) at which alerts fire: rising crossing of threshold, then a quiet period."""
     times, quiet_until = [], -np.inf
     above = np.flatnonzero(scores >= threshold)
     for i in above:
-        t = i * hop_s
+        t = t0 + i * hop_s
         if t >= quiet_until:
             times.append(t)
             quiet_until = t + refractory_s
@@ -55,7 +56,7 @@ def evaluate(recordings, threshold, tolerance_s=TOLERANCE_S, refractory_s=REFRAC
     """Returns (detected, occurrences, false_alarms, negative_hours, per_occurrence_hits)."""
     hits, n_fa, neg_h = [], 0, 0.0
     for r in recordings:
-        alerts = alert_times(r.scores, r.hop_s, threshold, refractory_s)
+        alerts = alert_times(r.scores, r.hop_s, threshold, refractory_s, r.t0)
         if not r.events:
             n_fa += len(alerts)
             neg_h += r.hours
@@ -69,17 +70,28 @@ def evaluate(recordings, threshold, tolerance_s=TOLERANCE_S, refractory_s=REFRAC
 def threshold_for_budget(recordings, fa_per_hour, grid=None):
     """Lowest threshold whose false-alarm rate on the negatives is <= the budget.
 
-    Call this on the TUNING set only; then apply the threshold to the test set.
+    Binary search over a grid of score quantiles (false alarms fall as the threshold
+    rises). Call this on the TUNING set only; then apply the threshold to the test set.
     """
+    negs = [r for r in recordings if not r.events]
     if grid is None:
-        neg = np.concatenate([r.scores for r in recordings if not r.events])
-        grid = np.unique(np.quantile(neg, np.linspace(0.9, 1.0, 2001)))
+        neg = np.concatenate([r.scores for r in negs])
+        grid = np.unique(np.quantile(neg, np.linspace(0.9, 1.0, 4001)))
         grid = np.append(grid, neg.max() + 1e-6)
-    for th in np.sort(grid):
-        _, _, n_fa, neg_h, _ = evaluate(recordings, th)
-        if neg_h > 0 and n_fa / neg_h <= fa_per_hour:
-            return float(th)
-    return float(np.max(grid))
+    grid = np.sort(grid)
+
+    def ok(th):
+        _, _, n_fa, neg_h, _ = evaluate(negs, th)
+        return neg_h > 0 and n_fa / neg_h <= fa_per_hour
+
+    lo, hi = 0, len(grid) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if ok(grid[mid]):
+            hi = mid
+        else:
+            lo = mid + 1
+    return float(grid[lo])
 
 
 def bootstrap_recall(hits, n_boot=2000, seed=0):
