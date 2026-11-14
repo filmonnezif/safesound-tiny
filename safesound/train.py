@@ -37,7 +37,7 @@ def loader(data_root, cfg, kind, batch, feats=True, wave=False, workers=None, se
 
 
 def train_student(data_root, cfg, kind="logmel", width=64, blocks=4, steps=12000, batch=256, lr=3e-3,
-                  teacher=None, kd=0.5, log_every=1000):
+                  teacher=None, kd=0.5, log_every=500):
     """Hard-label training, or knowledge distillation from `teacher` (BCE to its probabilities)."""
     model = DSCNN(width, blocks).cuda()
     it = loader(data_root, cfg, kind, batch, wave=teacher is not None)
@@ -66,7 +66,7 @@ def train_student(data_root, cfg, kind="logmel", width=64, blocks=4, steps=12000
     return model.eval()
 
 
-def train_teacher(data_root, cfg, cnn14, mids, steps=15000, batch=64, lr=1e-4, log_every=1000):
+def train_teacher(data_root, cfg, cnn14, mids, steps=15000, batch=64, lr=1e-4, log_every=500):
     from torchlibrosa.augmentation import SpecAugmentation
     from safesound.models import Teacher
     model = Teacher(cnn14, mids).cuda().train()
