@@ -102,3 +102,65 @@ precision / recall / F1 / accuracy = best F1 on the tuning clips, applied to tes
 - Fine-tuning barely moves clip-level AP (0.717 -> 0.731) but doubles event recall at
   0.1 FA/h (16.6% -> 35.8%): clip-level metrics hide the strict-false-alarm regime that matters
   for a safety device. This motivates the event-level FA/h protocol.
+
+## Phase 5: recall first, DSP detectors and fusion (`python -m safesound.phase5`)
+
+Protocol: target recall per class (95% alarm and siren, 90% others). On the tuning set, per class,
+the method and the highest threshold reaching the target are chosen; the test set reports the
+recall actually reached and the false alarms per hour it costs. In this protocol an event counts
+as detected when the decision is positive during it, even if the buzz was suppressed by the 10 s
+refractory period after an earlier alert of the same class. Methods: network; smoothed network
+(mean of the last two windows); network OR calibrated DSP score; logistic fusion of network and
+DSP (fitted on tuning windows). Safety net: a class-agnostic loud-onset alert on top.
+
+Macro over classes (test):
+
+| Model | Method | Recall | FA/h AudioSet | FA/h home |
+|---|---|---|---|---|
+| Teacher CNN14 | network | 91.7% | 48.6 | 9.1 |
+| Teacher CNN14 | per-class choice | 91.5% | 45.6 | 8.2 |
+| XL int8 (239 KB) | network | 91.3% | 105.9 | 18.0 |
+| XL int8 | per-class choice | 91.2% | 95.7 | 13.7 |
+| L int8 (93 KB) | network | 92.4% | 116.4 | 18.8 |
+| L int8 | per-class choice | 91.5% | 96.3 | 12.0 |
+| M int8 (21.5 KB) | network | 90.9% | 127.5 | 14.0 |
+| M int8 | per-class choice | 90.2% | 113.5 | 10.5 |
+| XL int8 | per-class choice + safety net | 95.5% | 205.3 | 16.3 |
+
+XL int8 per class (test recall, FA/h AudioSet / home):
+
+| Class | DSP alone | Network | Network + DSP (logistic) | + safety net |
+|---|---|---|---|---|
+| alarm | 100%, 365 / 360 | 95%, 84 / 16.8 | **97%, 77 / 15.2** (chosen) | 98%, 186 / 17.7 |
+| siren | 95%, 332 / 114 | 90%, 98 / 4.9 | 90%, **75 / 2.2** (chosen) | 94%, 202 / 5.1 |
+| doorbell | 89%, 365 / 360 | 82%, 31 / 1.0 | 82%, 28 / 0.9 (chosen) | 92%, 162 / 3.6 |
+| knock | 100%, 365 / 360 | 91%, 62 / 36.2 | 90%, **34 / 14.0** (chosen) | 94%, 160 / 16.1 |
+| baby cry | 100%, 365 / 360 | 92%, 91 / 9.6 (chosen) | 92%, 98 / 10.2 | 97%, 197 / 12.3 |
+| car horn | 100%, 365 / 360 | 96%, 271 / 39.7 | 96%, 270 / 39.4 | 98%, 326 / 42.7 |
+
+(nn_smooth was chosen for car horn; 365 FA/h = an alert every refractory period, i.e. always on.)
+
+Findings:
+- About 90-97% recall per class is reachable with every model; the price is false alarms,
+  mostly on the varied YouTube negatives (TV, music, other alarms), much less in the real home.
+- The hand-designed DSP detectors alone cannot reach high recall without firing constantly.
+- Fused with the network (logistic fusion chosen on tuning), they cut false alarms at the same
+  recall where the sound has a clear physical signature: siren home FA 4.9 -> 2.2/h, knock
+  36 -> 14/h, alarm 84 -> 77/h; macro home FA for the deployable students drops 18-24%.
+- The loud-sound safety net lifts every class to 92-98% recall (macro 95.5%) at about twice the
+  false-alarm rate on varied audio but only +2.6/h in the home.
+- Car horn is the costly class at high recall (it is mostly outdoor, and TV/traffic negatives
+  are full of horns).
+
+## Export (`python -m safesound.export`)
+
+| Student | TFLite int8 file | TFLite vs float: mean prob. error | vs simulated int8 | decision agreement |
+|---|---|---|---|---|
+| XL | 317,568 B | 0.0040 | 0.0045 | 99.57% |
+| L | 141,144 B | 0.0049 | 0.0049 | 99.61% |
+| M | 46,392 B | 0.0070 | 0.0065 | 99.48% |
+
+On 2,929 windows of real test clips. Ops: CONV_2D, DEPTHWISE_CONV_2D, PAD, MEAN, REDUCE_MAX,
+ADD, SUB, MUL, FULLY_CONNECTED, all supported by TFLite Micro. The real int8 models agree with the
+simulated int8 used in phases 4-5, so those numbers stand. Files (and C arrays for ESP-IDF) are
+on Drive in `results/export/`. On-device latency and power: phase 6 (hardware).
