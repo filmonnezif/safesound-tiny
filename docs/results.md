@@ -208,3 +208,42 @@ Findings:
   points of recall (90.5% vs 91.2%, inside the CI), saving ~60% of the compute, and it removes a
   quarter of the home false alarms. On busy YouTube audio the gate stays open (92%), as it should.
 - Hangover length (2-10 s) barely matters at a fixed tau.
+
+## Phase 5c: a livable alert policy (`python -m safesound.phase5c --policy ...`)
+
+Important correction to the reading of phases 4-5: the FA/h numbers there are the **mean per
+class**. A device alerts for all six classes, so what the user lives with is the **sum** (about
+6x). Phase 5c reports device totals.
+
+On top of each class's phase-5 method and the DSP wake gate (G2, tau 0.3, H 4): persistence
+k-of-n (alert when the score is above threshold in k of the last n windows; detection tolerance
+grows by the added delay), chosen per class on tuning. Policies:
+- tiered: alarm and siren keep a 95% recall target (tuning); the others a budget of 0.25 FA/h
+  (car horn 0.05) on all tuning negatives.
+- home1 / home3: budgets on the HOME tuning negatives only (SINS sessions, which include TV
+  watching), summing to 1 or 3 alerts per hour (alarm/siren 0.3 or 1.0 each, others 0.1 or 0.25).
+
+Test, recall per class and device totals (home alerts per hour summed over classes):
+
+| Policy | Model | alarm | siren | doorbell | knock | baby cry | horn | macro [95% CI] | device alerts/h home | TV-like/h |
+|---|---|---|---|---|---|---|---|---|---|---|
+| tiered | XL int8 | 97 | 94 | 49 | 56 | 23 | 19 | 56.2 | 18.5 | 192 |
+| tiered | teacher | 97 | 96 | 51 | 61 | 41 | 36 | 63.7 | 12.9 | 187 |
+| home1 | XL int8 | 89 | 70 | 72 | 77 | 59 | 59 | 71.2 | 1.8 | 37 |
+| home1 | teacher | 97 | 84 | 80 | 73 | 58 | 71 | 77.1 | 1.6 | 44 |
+| home3 | XL int8 | 89 | 87 | 79 | 74 | 64 | 67 | 76.6 | 4.4 | 121 |
+| home3 | teacher | 97 | 90 | 80 | 77 | 64 | 76 | 80.6 | 2.5 | 96 |
+
+Findings:
+- Recall-first (95% on alarm/siren) costs 13-19 alerts per hour in a home: not livable.
+- Budgeting false alarms on home audio, the deployment environment, is far better than on
+  mixed audio: at ~1.8 device alerts per hour the 239 KB student keeps 71% macro recall and 89%
+  on fire alarms; the teacher keeps 97% on fire alarms at the same rate. More budget (3/h)
+  mainly buys siren recall (70 -> 87% for XL).
+- Persistence (k-of-n) is chosen for most classes; for the alarm it halves home false alarms at
+  equal recall (tiered: 15.2 -> 8.7 per hour).
+- The gap between the teacher and the student is largest on alarms at a strict home budget
+  (97% vs 89%), so the student's capacity, not the decision logic, is the remaining limit.
+- Caveats: tuning and test home audio come from the same home (different sessions), so home
+  rates are optimistic for a new home; test home rates exceed the tuning budget (1.8 vs 1.0/h),
+  the same tuning-to-test shift seen before. With loud TV-like audio the rate is 37-44 per hour.
