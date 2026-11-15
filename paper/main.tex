@@ -19,7 +19,8 @@ recordings, a detector of six safety sounds (smoke/fire alarm, siren, doorbell, 
 car horn) small enough for a \$5 microcontroller. A CNN14 teacher fine-tuned on AudioSet strong
 labels is distilled into depthwise-separable CNNs of 7--239\,KB (int8). The 239\,KB student keeps
 90\% of the teacher's event recall at 0.1 false alarm per hour (32.4\% vs.\ 35.8\%) and beats the
-3.7\,M-parameter YAMNet on every clip-level metric. A DSP simulation ablation shows that mixing
+3.7\,M-parameter YAMNet on every clip-level metric and in event recall at 1 false alarm per
+hour (+4.0 points, paired bootstrap $p=0.014$). A DSP simulation ablation shows that mixing
 real home backgrounds helps (+4.4 points) while synthetic room, occlusion and microphone models do
 not help on close-mic test audio. Finally, we fuse the students with classical detectors derived
 from the physics of each sound (Goertzel-style tone detection, ISO~8201 beep cycling, pitch-sweep
@@ -28,7 +29,10 @@ sirens). Every model then reaches 90--97\% recall per class; DSP evidence fused 
 network cuts false alarms at equal recall where the sound has a clear physical signature
 (siren in the home: 4.9$\to$2.2 per hour; knock: 36$\to$14), and a class-agnostic loud-onset
 safety net lifts the 239\,KB student to 95.5\% macro recall at 16 false alarms per hour of real
-home audio. The int8 models export to TensorFlow Lite Micro with 99.6\% decision agreement.
+home audio. A DSP wake gate that runs the classifier only when the physics-based evidence
+fires lets it sleep 63\% of the time in a real home, saving about 60\% of the compute for a
+0.7-point recall cost, whereas a pure energy gate loses 12 points. The int8 models export to
+TensorFlow Lite Micro with 99.6\% decision agreement.
 \end{abstract}
 
 \section{Introduction}
@@ -44,7 +48,8 @@ audio, and later switch to a recall-first operating point.
 Contributions: (i) a locked public benchmark and protocol for DHH safety-sound detection with
 false alarms per hour of real home audio; (ii) a distilled int8 student family (7--239\,KB) for
 the ESP32-S3 and its size/recall trade-off; (iii) an ablation of DSP-based training simulation;
-(iv) physics-based DSP detectors fused with the network under a recall-first protocol.
+(iv) physics-based DSP detectors fused with the network under a recall-first protocol; (v) a DSP
+wake gate that cuts the classifier's duty cycle in a real home.
 
 \section{Data and protocol}
 \textbf{Sources.} Real events come from the AudioSet strong-label evaluation set~\cite{audioset,strong}
@@ -77,11 +82,13 @@ are alerts on negative audio, per hour. Thresholds are set on the tuning negativ
 \begin{tikzpicture}[font=\scriptsize, node distance=3mm and 4mm, b/.style={draw, rounded corners, align=center, minimum height=6mm}]
 \node[b] (mic) {mic\\16\,kHz};
 \node[b, right=of mic] (fe) {log-mel\\40$\times$100};
+\node[b, above=of fe, yshift=-1mm] (gate) {DSP wake gate\\(always on)};
 \node[b, right=of fe] (cnn) {DS-CNN\\int8};
 \node[b, below=of fe] (dsp) {DSP detectors\\(tone, cycling,\\sweep, onsets)};
 \node[b, right=of cnn, yshift=-5mm] (fu) {fusion /\\recall-first\\thresholds};
 \node[b, right=of fu] (out) {alert};
 \draw[-Latex] (mic) -- (fe); \draw[-Latex] (fe) -- (cnn); \draw[-Latex] (mic) |- (dsp);
+\draw[-Latex] (mic) |- (gate); \draw[-Latex, dashed] (gate) -| node[pos=0.8, right, font=\tiny]{wake} (cnn);
 \draw[-Latex] (cnn) -- (fu); \draw[-Latex] (dsp) -| (fu); \draw[-Latex] (fu) -- (out);
 \end{tikzpicture}
 \caption{On-device pipeline. The teacher (CNN14) is used only in training.}\label{fig:sys}
@@ -149,7 +156,8 @@ E + microphone model & 23.7 & 49.1 & 47.1 \\ \bottomrule
 \textbf{Distillation and size.} Distillation lifts student M from 22.1\% to 28.1\% at 0.1\,FA/h
 and from 49.3\% to 52.5\% at 1\,FA/h (float; tuning agrees). Recall grows with size
 (Fig.~\ref{fig:size}); XL keeps 90\% of the teacher's strict-budget recall with 1/330 of its
-parameters, and beats YAMNet at both budgets and on every clip-level metric. Int8 is lossless at
+parameters, and beats YAMNet at both budgets and on every clip-level metric (at 1\,FA/h by
++4.0 points, paired bootstrap 95\% CI [0.4, 7.6]). Int8 is lossless at
 1\,FA/h for L and XL and costs 0--6 points at 0.1\,FA/h. A PCEN front end~\cite{pcen} is worse
 than log-mel here (18.2\% vs.\ 28.1\% at 0.1\,FA/h for M). Real home audio (SINS) produces at
 most 0.15 FA/h for every model; the budget is spent on the varied AudioSet negatives.
@@ -210,7 +218,37 @@ knock from 36 to 14, and the macro home rate of the deployable students drops by
 Baby cry and car horn keep the network alone; the horn is the costly class (about 270 FA/h on
 varied audio, which is full of traffic). The loud-onset safety net raises every class to
 92--98\% recall (macro 95.5\%) for about twice the false alarms on varied audio but only
-+2.6 per hour in the home.
++2.6 per hour in the home. With class-stratified bootstrap intervals, the XL student's
+recall-first macro recall is 91.2\% [88.9, 93.2]. Test recall falls 1--8 points short of the
+tuning targets for some classes; setting thresholds on tuning with a +4-point margin meets 5 of
+6 targets (95.0\% [93.3, 96.6]) but raises home false alarms from 13.7 to 101 per hour, whereas
+the safety net reaches 95.5\% at 16.3 per hour, so it is the cheaper way to buy the last points.
+
+\textbf{Energy: a DSP wake gate.} An always-listening device should not run a CNN twice a
+second in an empty room. An always-on gate decides every 0.5\,s whether to run the classifier on
+the buffered last 2\,s (no added latency) and stays open for $H$ windows after a trigger. G1 is a
+time-domain energy jump over a tracked floor ($\approx$0.03\,M ops/s); G2 uses all the DSP
+evidence above ($\approx$5.4\,M ops/s), against 178\,M MAC/s for the XL student and its front end.
+
+\begin{table}[t]\centering\caption{Wake gate for the XL int8 student (recall-first thresholds):
+test recall, classifier duty in the real home / on AudioSet audio, compute saved in the home,
+false alarms per hour (AudioSet / home).}\label{tab:gate}
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{lcrrrr}\toprule
+Gate & $\tau$ & Recall & Duty home / AS & Saved & FA/h \\ \midrule
+none & -- & 91.2 & 100 / 100 & 0\% & 95.7 / 13.7 \\
+G1 energy & 0.1 & 79.1 & 13 / 72 & 87\% & 69.9 / 4.2 \\
+G2 DSP & 0.2 & 90.8 & 48 / 96 & 49\% & 93.2 / 12.0 \\
+G2 DSP & \textbf{0.3} & \textbf{90.5} & \textbf{37} / 92 & \textbf{60\%} & 90.5 / 10.3 \\
+G2 DSP & 0.5 & 88.0 & 23 / 81 & 74\% & 80.9 / 6.8 \\ \bottomrule
+\end{tabular}\end{table}
+
+Table~\ref{tab:gate} ($H$=4 windows; 10--20 give nearly the same): the energy gate saves the
+most but loses 12 points of recall, also on events whose onset lies inside the clip, because
+many safety sounds are not much louder than the room. The DSP-evidence gate lets the classifier
+sleep 63\% of the time in the real home for 0.7 points of recall (inside the confidence interval),
+saving about 60\% of the compute, and removes a quarter of the home false alarms as a side effect;
+on busy television-like audio it correctly stays open.
 
 \textbf{Deployment.} The students are rebuilt in Keras with identical batch-norm-folded weights
 (explicit symmetric padding to match PyTorch) and converted to full-integer TensorFlow Lite.
@@ -227,7 +265,9 @@ retains most of a large teacher's ability to catch safety sounds and outperforms
 on-device models. When recall comes first, all models reach 90--97\% recall per class, and
 physics-based DSP detectors earn their place not as stand-alone classifiers but as evidence that
 lowers the false-alarm cost of high recall, plus a class-agnostic safety net that brings the
-239\,KB model to 95.5\% recall. Limitations: one home
+239\,KB model to 95.5\% recall. A DSP wake gate built from the same evidence lets the classifier
+sleep most of the time in a real home at almost no recall cost, while a pure energy gate does not
+work for these sounds. Limitations: one home
 for real negatives, close-mic test events, two runs per ablation configuration, and no on-device
 measurements yet.
 

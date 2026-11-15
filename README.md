@@ -60,6 +60,9 @@ Done: phases 0-5, int8 TFLite export, paper draft ([paper/main.tex](paper/main.t
 - Recall first (95% alarm/siren, 90% others): 90-97% recall per class; DSP fusion cuts home false
   alarms 24-36% at equal recall; with the loud-sound safety net the XL model reaches 95.5% recall
   at 16 false alarms per hour of real home audio.
+- Energy: a DSP wake gate runs the classifier only when physics-based evidence fires; in the real
+  home the classifier sleeps 63% of the time (~60% compute saved) for 0.7 points of recall.
+- Independent review and what was done about it: [docs/review.md](docs/review.md).
 
 ## Layout
 
