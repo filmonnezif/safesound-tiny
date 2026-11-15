@@ -29,8 +29,18 @@ from safesound.phase5b import Gated, gate_open
 
 GATE = ("G2_dsp", 0.3, 4)
 PERSIST = [(1, 1), (2, 3), (2, 4), (3, 4), (3, 6), (4, 8)]
-POLICY = {"alarm": ("recall", 0.95), "siren": ("recall", 0.95), "doorbell": ("budget", 0.25),
-          "knock": ("budget", 0.25), "baby_cry": ("budget", 0.25), "car_horn": ("budget", 0.05)}
+POLICIES = {
+    # life-safety recall targets; other classes a budget on all tuning negatives
+    "tiered": {"alarm": ("recall", 0.95), "siren": ("recall", 0.95), "doorbell": ("budget", 0.25),
+               "knock": ("budget", 0.25), "baby_cry": ("budget", 0.25), "car_horn": ("budget", 0.05)},
+    # deployment in a home: budgets on HOME tuning negatives only, summing to 1 alert per hour
+    "home1": {"alarm": ("home_budget", 0.3), "siren": ("home_budget", 0.3), "doorbell": ("home_budget", 0.1),
+              "knock": ("home_budget", 0.1), "baby_cry": ("home_budget", 0.1), "car_horn": ("home_budget", 0.1)},
+    # same, 3 alerts per hour (alarm/siren get most of it)
+    "home3": {"alarm": ("home_budget", 1.0), "siren": ("home_budget", 1.0), "doorbell": ("home_budget", 0.25),
+              "knock": ("home_budget", 0.25), "baby_cry": ("home_budget", 0.25), "car_horn": ("home_budget", 0.25)},
+}
+POLICY = POLICIES["tiered"]
 COLS = {"G2_dsp": [0, 1, 2, 3, 4, 5, 6], "G1_energy": [6]}
 
 
@@ -58,14 +68,15 @@ def fa_rate(neg, th):
     return nfa / h if h else 0.0
 
 
-def run(name, root, clips, dspd, p5, gate=GATE):
+def run(name, root, clips, dspd, p5, gate=GATE, policy=None):
+    policy = policy or POLICY
     nn = {(s, k): load_scores(root, name, role) for s, roles in SPLITS.items() for k, role in roles.items()}
     out = {}
     for ci, cls in enumerate(CLASSES):
         fu = Fusion(ci, nn, dspd, clips)
         method = p5[name][cls]["chosen"]
         tune, test = Gated(fu, method, ci, "tune").items, Gated(fu, method, ci, "test").items
-        kind, val = POLICY[cls]
+        kind, val = policy[cls]
         best = None
         for k, n in PERSIST:
             tol = 2.0 + (n - 1) * HOP
@@ -75,6 +86,10 @@ def run(name, root, clips, dspd, p5, gate=GATE):
                 th = threshold_for_recall(tp, val) if n == 1 else _thr_recall(tp, val, ev)
                 cost = fa_rate(tas + thome, th)
                 key = cost
+            elif kind == "home_budget":
+                th = threshold_for_budget(thome, val)
+                det, m, _, _, _ = ev(tp, th)
+                key = -det / max(m, 1)
             else:
                 th = threshold_for_budget(tas + thome, val)
                 det, m, _, _, _ = ev(tp, th)
@@ -125,15 +140,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--data", type=Path, default=Path("/content/cache"))
+    ap.add_argument("--policy", default="tiered", choices=list(POLICIES))
+    ap.add_argument("--models", nargs="*", default=["p4_XL_logmel_kd_int8", "p3_teacher_raw"])
     a = ap.parse_args()
     clips = {(s, k): bench.Clips(a.data, role) for s, roles in SPLITS.items() for k, role in roles.items()}
     dspd = {(s, k): load_scores(a.root, "dsp_v1", role) for s, roles in SPLITS.items() for k, role in roles.items()}
     p5 = json.load(open(a.root / "results" / "phase5.json"))
     res = {}
-    for name in ("p4_XL_logmel_kd_int8", "p3_teacher_raw"):
-        print(f"\n### {name}", flush=True)
-        res[name] = run(name, a.root, clips, dspd, p5)
-        json.dump(res, open(a.root / "results" / "phase5c.json", "w"), indent=1)
+    for name in a.models:
+        print(f"\n### {name} policy {a.policy}", flush=True)
+        res[name] = run(name, a.root, clips, dspd, p5, policy=POLICIES[a.policy])
+        suffix = "" if a.policy == "tiered" else f"_{a.policy}"
+        json.dump(res, open(a.root / "results" / f"phase5c{suffix}.json", "w"), indent=1)
 
 
 if __name__ == "__main__":
