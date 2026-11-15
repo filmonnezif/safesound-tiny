@@ -210,7 +210,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--data", type=Path, default=Path("/content/cache"))
+    ap.add_argument("--curve", action="store_true", help="only the gate trade-off curve (XL int8)")
     a = ap.parse_args()
+    if a.curve:
+        gate_curve(a.root, a.data)
+        return
     clips = {(s, k): bench.Clips(a.data, role) for s, roles in SPLITS.items() for k, role in roles.items()}
     dspd = {(s, k): load_scores(a.root, "dsp_v1", role) for s, roles in SPLITS.items() for k, role in roles.items()}
     p5 = json.load(open(a.root / "results" / "phase5.json"))
@@ -232,6 +236,62 @@ def main():
             if g:
                 print(f"{name:22s} {gname:9s} rec {g['test_recall']:.1%} {np.round(g['test_recall_ci'], 3)} FA "
                       f"{g['test_fa_as']:.1f}/{g['test_fa_home']:.2f} duty {g['duty_negatives']:.1%} saving {g['compute_saving']:.1%}")
+
+
+
+# ------------------------------------------------------------------ gate trade-off curve
+
+def gate_curve(root, data, name="p4_XL_logmel_kd_int8"):
+    """For every gate setting: test recall (all events, and events whose onset lies >= 1 s
+    inside the clip, i.e. the gate could hear them start), classifier duty on home and on
+    AudioSet negatives, compute saving for a home deployment, and false alarms."""
+    clips = {(s, k): bench.Clips(data, role) for s, roles in SPLITS.items() for k, role in roles.items()}
+    dspd = {(s, k): load_scores(root, "dsp_v1", role) for s, roles in SPLITS.items() for k, role in roles.items()}
+    nn = {(s, k): load_scores(root, name, role) for s, roles in SPLITS.items() for k, role in roles.items()}
+    p5 = json.load(open(root / "results" / "phase5.json"))[name]
+    per_class = {}
+    for ci, cls in enumerate(CLASSES):
+        fu = Fusion(ci, nn, dspd, clips)
+        method = p5[cls]["chosen"]
+        per_class[cls] = (Gated(fu, method, ci, "test"), p5[cls]["methods"][method]["threshold"])
+    cls_ops = OPS_CLASSIFIER[name] + OPS_LOGMEL
+    rows = []
+    for gate in GATES:
+        for H in (4, 10, 20):
+            for tau in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
+                rec, rec_on, fa_as, fa_home, open_h, n_h, open_a, n_a = [], [], [], [], 0, 0, 0, 0
+                for cls, (G, th) in per_class.items():
+                    pos, pos_on, nas, nhome = [], [], [], []
+                    for k, s, d, ev in G.items:
+                        g = gate_open(d, GATES[gate], tau, H) if tau > 0 else np.ones(len(s), bool)
+                        r = Recording(np.where(g, s, 0.0), HOP, ev, HOP)
+                        if k == "pos":
+                            pos.append(r)
+                            ev_on = [(on, off) for on, off in ev if on >= 1.0]
+                            if ev_on:
+                                pos_on.append(Recording(r.scores, HOP, ev_on, HOP))
+                        elif k == "neg_as":
+                            nas.append(r); open_a += g.sum(); n_a += len(g)
+                        else:
+                            nhome.append(r); open_h += g.sum(); n_h += len(g)
+                    det, n, _, _, _ = evaluate(pos, th)
+                    det2, n2, _, _, _ = evaluate(pos_on, th)
+                    rec.append(det / n); rec_on.append(det2 / max(n2, 1))
+                    for lst, neg in ((fa_as, nas), (fa_home, nhome)):
+                        _, _, nfa, h, _ = evaluate(neg, th)
+                        lst.append(nfa / h)
+                duty_h, duty_a = open_h / n_h, open_a / n_a
+                rows.append({"gate": gate, "H": H, "tau": tau, "recall": float(np.mean(rec)),
+                             "recall_onset_seen": float(np.mean(rec_on)), "duty_home": float(duty_h),
+                             "duty_audioset": float(duty_a), "fa_as": float(np.mean(fa_as)),
+                             "fa_home": float(np.mean(fa_home)),
+                             "saving_home": float(1 - (OPS_GATE[gate] + duty_h * cls_ops) / cls_ops)})
+                r = rows[-1]
+                print(f"{gate:9s} H{H:2d} tau {tau:.1f}  rec {r['recall']:.1%} (onset seen {r['recall_onset_seen']:.1%})"
+                      f"  duty home {duty_h:.1%} AS {duty_a:.1%}  saving(home) {r['saving_home']:.1%}"
+                      f"  FA {r['fa_as']:.1f}/{r['fa_home']:.2f}", flush=True)
+    json.dump(rows, open(root / "results" / f"gate_curve_{name}.json", "w"), indent=1)
+    return rows
 
 
 if __name__ == "__main__":
