@@ -146,7 +146,7 @@ Findings:
 - The hand-designed DSP detectors alone cannot reach high recall without firing constantly.
 - Fused with the network (logistic fusion chosen on tuning), they cut false alarms at the same
   recall where the sound has a clear physical signature: siren home FA 4.9 -> 2.2/h, knock
-  36 -> 14/h, alarm 84 -> 77/h; macro home FA for the deployable students drops 18-24%.
+  36 -> 14/h, alarm 84 -> 77/h; macro home FA for the deployable students drops 24-36% (XL 18.0 -> 13.7, L 18.8 -> 12.0, M 14.0 -> 10.5/h).
 - The loud-sound safety net lifts every class to 92-98% recall (macro 95.5%) at about twice the
   false-alarm rate on varied audio but only +2.6/h in the home.
 - Car horn is the costly class at high recall (it is mostly outdoor, and TV/traffic negatives

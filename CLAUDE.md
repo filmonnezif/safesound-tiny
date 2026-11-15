@@ -14,3 +14,8 @@ Constraints from the user:
 - Follow [docs/protocol.md](docs/protocol.md): the real test set is locked; tune on
   the tuning set only.
 - Author block stays "Anonymous" until the user gives names.
+
+Pipeline on Colab (all resumable from Drive): `safesound.data` (stores) -> `safesound.phase1`
+-> `safesound.phases 2|3|4` -> `safesound.phase5` -> `safesound.export`; `safesound.report` and
+`safesound.cliplevel` print results. On 12-CPU runtimes run jobs with nohup (log on Drive);
+read logs from Colab's terminal, since a busy cell blocks the notebook.

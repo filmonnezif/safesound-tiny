@@ -51,9 +51,15 @@ of real home audio without the target sounds (SINS, CHiME-Home, DCASE home scene
 
 ## Status (2026-11-15)
 
-Phases 0-4 done; see [docs/results.md](docs/results.md). Best tiny model: distilled DS-CNN XL,
-239 KB int8, 32.4% / 59.3% event recall at 0.1 / 1 false alarm per hour (teacher 35.8% / 66.8%).
-Next: phase 5 (alarm pattern detector, temporal decoding), phase 6 (ESP32-S3).
+Done: phases 0-5, int8 TFLite export, paper draft ([paper/main.tex](paper/main.tex)); results in
+[docs/results.md](docs/results.md). Remaining: phase 6 on hardware (ESP32-S3 latency, memory, power).
+
+- Teacher (CNN14 fine-tuned): 35.8% / 66.8% event recall at 0.1 / 1 false alarm per hour.
+- Best tiny model: distilled DS-CNN XL, 239 KB int8 (318 KB TFLite): 28.6% / 59.5%; beats YAMNet
+  on every clip-level metric.
+- Recall first (95% alarm/siren, 90% others): 90-97% recall per class; DSP fusion cuts home false
+  alarms 24-36% at equal recall; with the loud-sound safety net the XL model reaches 95.5% recall
+  at 16 false alarms per hour of real home audio.
 
 ## Layout
 

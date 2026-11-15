@@ -24,7 +24,11 @@ real home backgrounds helps (+4.4 points) while synthetic room, occlusion and mi
 not help on close-mic test audio. Finally, we fuse the students with classical detectors derived
 from the physics of each sound (Goertzel-style tone detection, ISO~8201 beep cycling, pitch-sweep
 tracking, onset regularity, harmonicity) under a recall-first protocol (95\% target for alarms and
-sirens): \pend{[phase 5 result]}.
+sirens). Every model then reaches 90--97\% recall per class; DSP evidence fused with the
+network cuts false alarms at equal recall where the sound has a clear physical signature
+(siren in the home: 4.9$\to$2.2 per hour; knock: 36$\to$14), and a class-agnostic loud-onset
+safety net lifts the 239\,KB student to 95.5\% macro recall at 16 false alarms per hour of real
+home audio. The int8 models export to TensorFlow Lite Micro with 99.6\% decision agreement.
 \end{abstract}
 
 \section{Introduction}
@@ -161,26 +165,69 @@ xtick={7,21.5,93,239}, xticklabels={7,22,93,239}, tick label style={font=\script
 \end{axis}\end{tikzpicture}
 \caption{Recall of int8 students vs.\ size.}\label{fig:size}\end{figure}
 
-\textbf{Recall-first operation with DSP detectors.} \pend{[Phase 5: recall-first protocol (95\%
-target alarm/siren, 90\% others, set on tuning); per-class choice among network, smoothed
-network, network OR calibrated DSP, logistic fusion; test recall reached and FA/h cost; loud-sound
-safety net.]} The DSP detectors are derived from the physics of each sound: a narrowband tone
-in 2--5\,kHz that dominates the low band at a fixed frequency and switches on and off (ISO~8201
-signal~\cite{iso8201}; per-bin peak prominence, i.e.\ a Goertzel-style~\cite{goertzel} tone test
-on all bins); a sustained tonal peak in 500--1800\,Hz with a smooth sweep of more than 150\,Hz
+\textbf{Recall-first operation with DSP detectors.} A missed fire alarm costs more than a
+false buzz, so we also fix a target recall per class on the tuning set (95\% for alarm and siren,
+90\% otherwise) and report the test recall reached and the false alarms it costs. Here an event
+counts as detected when the decision is positive during it, even if the buzz was suppressed by
+the refractory period after an earlier alert of the same class (the user was alerted). Per class
+we choose, on tuning, among the network, a smoothed network (mean of two windows), the network OR
+a calibrated DSP score, and a logistic fusion of network and DSP scores.
+
+The DSP detectors are derived from the physics of each sound: a narrowband tone in 2--5\,kHz
+that dominates the low band at a fixed frequency and switches on and off (ISO~8201
+signal~\cite{iso8201}; per-bin peak prominence, i.e.\ a Goertzel-style~\cite{goertzel} tone test on
+all bins); a sustained tonal peak in 500--1800\,Hz with a smooth sweep of more than 150\,Hz
 (siren); a tonal onset that keeps ringing and decays (chime); broadband onsets with regular
 80--700\,ms spacing (knock); voicing with $f_0$ in 300--650\,Hz, harmonics 1--3 and no
-sub-harmonic energy, with pitch movement (baby cry); a loud steady tone that does not decay (horn);
-and a class-agnostic level jump over a tracked noise floor (safety net). All run causally with a
-minimum-follower noise floor and cost under 5\,ms per second of audio on a desktop CPU.
+sub-harmonic energy, with pitch movement (baby cry); a loud steady tone that does not decay
+(horn); and a class-agnostic level jump over a tracked noise floor (safety net). All run causally
+with a minimum-follower noise floor and cost about 5\,ms per second of audio on a desktop CPU.
 
-\textbf{Deployment.} \pend{[export: real int8 TFLite sizes, ops, agreement with the simulated
-int8 model.]} Measuring latency and power on the ESP32-S3 is future work.
+\begin{table}[t]\centering\caption{Recall first (targets 95/90\%): test recall and false alarms
+per hour (AudioSet / home). Macro over classes; per-class rows for the XL int8 student.}\label{tab:p5}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llrr}\toprule
+Model & Method & Recall & FA/h AS / home \\ \midrule
+Teacher & network & 91.7 & 48.6 / 9.1 \\
+Teacher & per-class choice & 91.5 & 45.6 / 8.2 \\
+XL int8 & network & 91.3 & 105.9 / 18.0 \\
+XL int8 & per-class choice & 91.2 & 95.7 / 13.7 \\
+L int8 & per-class choice & 91.5 & 96.3 / 12.0 \\
+XL int8 & choice + safety net & \textbf{95.5} & 205.3 / 16.3 \\ \midrule
+\multicolumn{4}{l}{XL int8, network $\to$ network+DSP fusion (logistic):} \\
+alarm & & 95$\to$97 & 84 / 16.8 $\to$ 77 / 15.2 \\
+siren & & 90$\to$90 & 98 / 4.9 $\to$ 75 / 2.2 \\
+knock & & 91$\to$90 & 62 / 36.2 $\to$ 34 / 14.0 \\
+doorbell & & 82$\to$82 & 31 / 1.0 $\to$ 28 / 0.9 \\ \bottomrule
+\end{tabular}\end{table}
+
+Table~\ref{tab:p5} shows that every model reaches about 90--97\% recall per class; the price is
+false alarms, mostly on the varied YouTube negatives (television, music, other alarms) and much
+less in the real home. The DSP detectors alone cannot reach high recall without firing almost
+continuously, but fused with the network they lower the false-alarm cost at equal recall where
+the sound has a strong physical signature: siren home false alarms fall from 4.9 to 2.2 per hour,
+knock from 36 to 14, and the macro home rate of the deployable students drops by 24--36\%.
+Baby cry and car horn keep the network alone; the horn is the costly class (about 270 FA/h on
+varied audio, which is full of traffic). The loud-onset safety net raises every class to
+92--98\% recall (macro 95.5\%) for about twice the false alarms on varied audio but only
++2.6 per hour in the home.
+
+\textbf{Deployment.} The students are rebuilt in Keras with identical batch-norm-folded weights
+(explicit symmetric padding to match PyTorch) and converted to full-integer TensorFlow Lite.
+The XL, L and M files are 318, 141 and 46\,KB and use only operators supported by TensorFlow
+Lite Micro~\cite{tflm} (convolution, depthwise convolution, pad, mean, max, add, mul, fully
+connected). On 2{,}929 windows of real test clips the real int8 models agree with the float
+models on 99.5--99.6\% of decisions (mean probability error 0.004--0.007) and match our simulated
+int8 model, so the int8 results above stand. The XL student needs 89\,M multiply-accumulates per
+inference (two per second); measuring latency and power on the ESP32-S3 is future work.
 
 \section{Conclusion}
 Under a strict, locked, event-level protocol on real recordings, a 239\,KB distilled int8 CNN
 retains most of a large teacher's ability to catch safety sounds and outperforms widely used
-on-device models; physics-based DSP detectors \pend{[phase 5 conclusion]}. Limitations: one home
+on-device models. When recall comes first, all models reach 90--97\% recall per class, and
+physics-based DSP detectors earn their place not as stand-alone classifiers but as evidence that
+lowers the false-alarm cost of high recall, plus a class-agnostic safety net that brings the
+239\,KB model to 95.5\% recall. Limitations: one home
 for real negatives, close-mic test events, two runs per ablation configuration, and no on-device
 measurements yet.
 
