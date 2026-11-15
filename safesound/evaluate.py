@@ -52,18 +52,27 @@ def alert_times(scores, hop_s, threshold, refractory_s=REFRACTORY_S, t0=0.0):
     return times
 
 
-def evaluate(recordings, threshold, tolerance_s=TOLERANCE_S, refractory_s=REFRACTORY_S):
-    """Returns (detected, occurrences, false_alarms, negative_hours, per_occurrence_hits)."""
+def evaluate(recordings, threshold, tolerance_s=TOLERANCE_S, refractory_s=REFRACTORY_S, decision_hits=False):
+    """Returns (detected, occurrences, false_alarms, negative_hours, per_occurrence_hits).
+
+    decision_hits=False (phases 1-4): an occurrence is detected if an *alert* (after the
+    refractory period) falls in its window. decision_hits=True (recall-first protocol): detected
+    if the detector's decision is positive anywhere in the window, even when the buzz was
+    suppressed because the same class alerted shortly before (the user was alerted anyway).
+    False alarms are always counted as alerts with the refractory period."""
     hits, n_fa, neg_h = [], 0, 0.0
     for r in recordings:
-        alerts = alert_times(r.scores, r.hop_s, threshold, refractory_s, r.t0)
         if not r.events:
-            n_fa += len(alerts)
+            n_fa += len(alert_times(r.scores, r.hop_s, threshold, refractory_s, r.t0))
             neg_h += r.hours
             continue
+        if decision_hits:
+            times = r.t0 + np.flatnonzero(r.scores >= threshold) * r.hop_s
+        else:
+            times = alert_times(r.scores, r.hop_s, threshold, refractory_s, r.t0)
         for on, off in merge_events(r.events):
             end = max(off, on + tolerance_s)
-            hits.append(any(on <= t <= end for t in alerts))
+            hits.append(any(on <= t <= end for t in times))
     return sum(hits), len(hits), n_fa, neg_h, np.array(hits, bool)
 
 
