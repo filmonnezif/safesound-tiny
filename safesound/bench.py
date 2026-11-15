@@ -34,16 +34,19 @@ class Clips:
             m["src"] = s.path.name
             metas.append(m)
         self.meta = pd.concat(metas, ignore_index=True)
+        self._st = self.meta._store.to_numpy(int)
+        self._rw = self.meta._row.to_numpy(int)
+        self.classes = [str(c).split(";") for c in self.meta.classes]
+        self.weak = self.meta.weak.astype(str).str.lower().eq("true").to_numpy()
 
     def __len__(self):
         return len(self.meta)
 
     def audio(self, i):
-        r = self.meta.iloc[i]
-        return to_float(self.stores[r._store].audio(int(r._row)))
+        return to_float(self.stores[self._st[i]].audio(self._rw[i]))
 
     def events(self, i, cls):
-        return self.stores[self.meta._store.iloc[i]].events(int(self.meta._row.iloc[i]), cls)
+        return self.stores[self._st[i]].events(self._rw[i], cls)
 
 
 def manifest_hash(root):

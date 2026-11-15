@@ -67,3 +67,8 @@ Positives and negatives go through the same steps.
   Fixed per-band normalisation (training-set mean / std), folded into the front end.
 - **int8:** batch norm folded; weights symmetric per channel; activations asymmetric per
   tensor with min/max calibrated on 4096 simulated examples (TFLite int8 scheme, simulated).
+
+Implementation note: filter cutoffs (occlusion low-pass, mic high-pass) are drawn from a
+64-point log grid of precomputed designs; mic self-noise is a random slice of a fixed 60 s
+Gaussian buffer. (From the second repeat of phase 2 onwards; the first repeat drew cutoffs
+continuously. Statistically equivalent.)

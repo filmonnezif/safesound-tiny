@@ -47,20 +47,23 @@ class Store:
         self.path = Path(path)
         self.meta = pd.read_csv(self.path / "meta.csv", keep_default_na=False)
         self._shards = {}
+        # plain arrays: pandas row lookups are too slow inside the data generator
+        self._shard = self.meta.shard.to_numpy(int)
+        self._off = self.meta.offset.to_numpy(int)
+        self._n = self.meta.n.to_numpy(int)
+        self._events = [json.loads(e or "[]") for e in self.meta.events]
 
     def __len__(self):
         return len(self.meta)
 
     def audio(self, i) -> np.ndarray:
-        r = self.meta.iloc[i]
-        s = int(r.shard)
+        s = int(self._shard[i])
         if s not in self._shards:
             self._shards[s] = np.load(self.path / f"shard_{s:03d}.npy", mmap_mode="r")
-        return np.asarray(self._shards[s][int(r.offset): int(r.offset) + int(r.n)])
+        return np.asarray(self._shards[s][self._off[i]: self._off[i] + self._n[i]])
 
     def events(self, i, cls=None):
-        ev = json.loads(self.meta.iloc[i].events or "[]")
-        return [(on, off) for c, on, off in ev if cls is None or c == cls]
+        return [(on, off) for c, on, off in self._events[i] if cls is None or c == cls]
 
     def hours(self):
         return self.meta.n.sum() / 16000 / 3600

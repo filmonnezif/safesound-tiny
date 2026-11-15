@@ -16,7 +16,8 @@ simulation itself as a cue.
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.signal import butter, fftconvolve, lfilter, sosfilt
+from scipy.fft import irfft, next_fast_len, rfft
+from scipy.signal import butter, lfilter, sosfilt
 
 from safesound.classes import CLASSES
 
@@ -106,11 +107,18 @@ def room_ir(rng, rt60=None, dist=None, volume=None):
     return h / np.sqrt((h ** 2).sum())
 
 
+# Filters are designed once on a fine grid of cutoffs (designing per example is slow).
+_GRID = 64
+_OCCL = {o: [butter(o, fc, "lowpass", fs=SR, output="sos") for fc in np.geomspace(300, 1500, _GRID)]
+         for o in (1, 2)}
+_MIC_HP = [butter(2, fc, "highpass", fs=SR, output="sos") for fc in np.geomspace(50, 200, _GRID)]
+_NOISE = np.random.default_rng(12345).normal(size=60 * SR).astype(np.float32)   # self-noise source
+
+
 def occlude(x, rng):
-    """Transmission through a closed door / wall: 1st or 2nd order low-pass (mass law)."""
-    order = rng.choice([1, 2])
-    fc = rng.uniform(300, 1500)
-    sos = butter(order, fc, "lowpass", fs=SR, output="sos")
+    """Transmission through a closed door / wall: 1st or 2nd order low-pass (mass law),
+    cutoff 300-1500 Hz."""
+    sos = _OCCL[int(rng.choice([1, 2]))][rng.integers(_GRID)]
     return sosfilt(sos, x).astype(np.float32)
 
 
@@ -133,10 +141,11 @@ def high_shelf(gain_db, f0=3000.0, q=0.707):
 
 def mic_chain(x, rng):
     """INMP441-like capture: port/DC high-pass, response tilt, self-noise, clipping, 16-bit."""
-    x = sosfilt(butter(2, rng.uniform(50, 200), "highpass", fs=SR, output="sos"), x)
+    x = sosfilt(_MIC_HP[rng.integers(_GRID)], x)                      # 50-200 Hz
     b, a = high_shelf(rng.uniform(-4, 4))
     x = lfilter(b, a, x)
-    x = x + rng.normal(0, db(rng.uniform(-80, -65)), len(x))
+    k = rng.integers(len(_NOISE) - len(x))
+    x = x + _NOISE[k:k + len(x)] * db(rng.uniform(-80, -65))
     if rng.random() < 0.03:
         x = x * db(15)                                # loud event close to the mic: clipping
     x = np.clip(x, -1, 1)
@@ -153,8 +162,10 @@ class Generator:
         self.pos, self.neg, self.bg, self.cfg, self.p_pos = pos, neg, bg, cfg, p_pos
         self.rng = np.random.default_rng(seed)
         self.by_class = {c: [i for i in range(len(pos)) if pos.events(i, c)] for c in CLASSES}
-        self.weak = pos.meta.weak.astype(str).str.lower().eq("true").to_numpy()
-        self.rirs = [room_ir(self.rng) for _ in range(200)] if cfg.rir else []
+        self.weak = pos.weak
+        rirs = [room_ir(self.rng) for _ in range(200)] if cfg.rir else []
+        self.nfft = next_fast_len(CLIP + max([len(h) for h in rirs], default=1))
+        self.rir_f = [rfft(h, self.nfft) for h in rirs]   # convolution by cached spectra
 
     def crop(self, x, end):
         start = end - CLIP
@@ -175,7 +186,8 @@ class Generator:
             # weak label: put the label window on a loud part of the clip
             hop = SR // 4
             ends = np.arange(min(LABEL, n), n + 1, hop) if n >= LABEL else np.array([n])
-            e = np.array([rms(x[max(0, k - LABEL):k]) for k in ends])
+            c2 = np.concatenate([[0.0], np.cumsum(x.astype(np.float64) ** 2)])
+            e = np.sqrt((c2[ends] - c2[np.maximum(0, ends - LABEL)]) / LABEL)
             p = e ** 2 / (e ** 2).sum() if e.sum() > 0 else None
             end = int(rng.choice(ends, p=p))
         else:
@@ -188,7 +200,7 @@ class Generator:
         t1, t0 = end / SR, end / SR - LABEL / SR
         for k, ck in enumerate(CLASSES):
             if self.weak[i]:
-                y[k] = float(ck in str(self.pos.meta.classes.iloc[i]).split(";"))
+                y[k] = float(ck in self.pos.classes[i])
             else:
                 for on, off in self.pos.events(i, ck):
                     if min(off, t1) - max(on, t0) >= min(0.2, off - on):
@@ -214,7 +226,8 @@ class Generator:
         positive = rng.random() < self.p_pos
         x, y = self.positive() if positive else self.negative()
         if cfg.rir and rng.random() < 0.7:
-            x = fftconvolve(x, self.rirs[rng.integers(len(self.rirs))])[:CLIP].astype(np.float32)
+            H = self.rir_f[rng.integers(len(self.rir_f))]
+            x = irfft(rfft(x, self.nfft) * H, self.nfft)[:CLIP].astype(np.float32)
         if cfg.occl and rng.random() < 0.25:
             x = occlude(x, rng)
         if cfg.mix:
