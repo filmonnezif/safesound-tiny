@@ -43,10 +43,16 @@ Findings:
 
 ## Phase 3: teachers
 
-| Teacher | Test @0.1 | Test @1 |
-|---|---|---|
-| CNN14 fine-tuned, raw clips (A) | 35.8% | 66.8% |
-| CNN14 fine-tuned, simulation D | (running) | |
+| Teacher | Test @0.1 | Test @1 | Tuning @0.1 | Tuning @1 |
+|---|---|---|---|---|
+| CNN14 fine-tuned, raw clips (A) | **35.8%** | **66.8%** | **35.4%** | **65.8%** |
+| CNN14 fine-tuned, simulation D | 29.5% | 65.4% | 30.7% | 62.5% |
+
+Simulation makes the large teacher worse on both tuning and test, consistent with the
+ablation: the evaluation audio is mostly close-mic, so far-field simulation moves the model
+away from it. The phase 4 teacher is chosen on tuning recall like everything else, so the
+students are distilled from the raw-data teacher (they still train on simulation D inputs;
+the teacher labels the same simulated example).
 
 ## Phase 4: distilled int8 students
 
