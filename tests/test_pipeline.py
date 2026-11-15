@@ -65,3 +65,12 @@ def test_student_and_int8():
     a, b = torch.sigmoid(m(f)), torch.sigmoid(q(f))
     assert (a - b).abs().max() < 0.1
     assert count_params(m) > 1000 and count_macs(m) > 1e5 and model_bytes_int8(m) > 1000
+
+
+def test_torch_frontend_matches_numpy():
+    x = (np.random.default_rng(2).normal(size=48000) * 0.05).astype(np.float32)
+    for kind in ["logmel", "pcen"]:
+        a = frontend.features(x, kind)
+        b = frontend.features_torch(torch.from_numpy(x)[None], kind)[0].numpy()
+        assert a.shape == b.shape
+        assert np.abs(a - b).max() < 1e-2 * max(1.0, np.abs(a).max()), kind

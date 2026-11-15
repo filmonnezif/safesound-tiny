@@ -80,3 +80,29 @@ def stream_windows(x, kind, hop_s=0.5, win_s=2.0):
     n = len(x) // int(hop_s * SR)
     ends = [(pad + (k + 1) * int(hop_s * SR) - N_FFT) // HOP for k in range(n)]
     return np.stack([F[:, e - FRAMES_2S + 1: e + 1] for e in ends])
+
+
+# ------------------------------------------------------------------ same front end in torch (training on GPU)
+
+def features_torch(x, kind="logmel"):
+    """Batch version of `features` for training: x (B, samples) float tensor on any device.
+    Matches the numpy front end up to float rounding (checked in tests)."""
+    import torch
+    dev = x.device
+    x = x + torch.randn_like(x) * 10 ** (DITHER_DBFS / 20)
+    frames = (x * 32768.0).unfold(1, N_FFT, HOP) * torch.as_tensor(_WIN, device=dev)
+    spec = torch.fft.rfft(frames, dim=-1).abs() ** 2                      # (B, T, 257)
+    E = torch.matmul(spec, torch.as_tensor(_FB, device=dev).T).transpose(1, 2)  # (B, mels, T)
+    if kind == "logmel":
+        return torch.log(E + 1.0)
+    if kind == "pcen":
+        T, alpha, delta, r, eps = 0.4, 0.98, 2.0, 0.5, 1e-6
+        t_frames = T / (HOP / SR)
+        b = (np.sqrt(1 + 4 * t_frames ** 2) - 1) / (2 * t_frames ** 2)
+        M = torch.empty_like(E)
+        m = E[:, :, 0]
+        for t in range(E.shape[2]):
+            m = (1 - b) * m + b * E[:, :, t]
+            M[:, :, t] = m
+        return (E / (eps + M) ** alpha + delta) ** r - delta ** r
+    raise ValueError(kind)

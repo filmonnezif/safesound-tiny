@@ -120,8 +120,9 @@ def phase3(data, root, steps):
 
 
 def calib_feats(data, cfg, kind, n_batches=16):
-    it = loader(data, cfg, kind, 256, workers=16, seed=99)
-    return torch.cat([next(it)[0] for _ in range(n_batches)])
+    from safesound.train import gpu_features
+    it = loader(data, cfg, 256, seed=99)
+    return torch.cat([gpu_features(next(it)[0].cuda(), kind).cpu() for _ in range(n_batches)])
 
 
 def phase4(data, root, steps):
