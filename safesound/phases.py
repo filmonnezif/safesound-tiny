@@ -8,7 +8,7 @@ Phase 2: DSP simulation ablation. A medium student (DS-CNN, width 64) trained wi
          labels under each simulation setting A-E; the setting with the best TUNING macro
          recall at 1 FA/h is chosen for phases 3-4.
 Phase 3: CNN14 teacher fine-tuned on raw data (A) and on the chosen simulation.
-Phase 4: students S/M/L/XL distilled from the simulated-data teacher; log-mel vs PCEN;
+Phase 4: students S/M/L/XL distilled from the teacher with the best tuning recall; log-mel vs PCEN;
          int8 simulation of each; size / compute / memory table.
 """
 import argparse
@@ -178,8 +178,13 @@ def calib_feats(data, cfg, kind, n_batches=16):
 def phase4(data, root, steps):
     choice = json.load(open(root / "results" / "phase2_choice.json"))["config"]
     cfg = CONFIGS[choice]
-    wait_for([root / "checkpoints" / "p3_teacher_sim.pt"], "the simulated-data teacher")
-    teacher = load_teacher(root, "p3_teacher_sim")
+    # the distillation teacher is chosen like everything else: best TUNING macro recall at 1 FA/h
+    teachers = ["p3_teacher_raw", "p3_teacher_sim"]
+    wait_for([root / "results" / f"{t}.json" for t in teachers], "the phase 3 teachers")
+    tname = max(teachers, key=lambda t: (macro(json.load(open(root / "results" / f"{t}.json")), "tune_recall")[1.0],
+                                         macro(json.load(open(root / "results" / f"{t}.json")), "tune_recall")[0.1]))
+    print(f"distilling from {tname} (best tuning recall)", flush=True)
+    teacher = load_teacher(root, tname)
     runs = [(f"p4_{s}_logmel_kd", s, "logmel") for s in STUDENT_SIZES] + [("p4_M_pcen_kd", "M", "pcen")]
     for name, size, kind in runs:
         model, r = student_run(data, root, name, cfg, kind, size, steps, teacher=teacher)
@@ -201,9 +206,9 @@ def phase4(data, root, steps):
     ref = {"student_M_hard (mean of runs)": {b: round(float(np.mean([m[b] for m in p2])), 4) for b in bench.BUDGETS},
            "teacher_raw": macro(json.load(open(root / "results" / "p3_teacher_raw.json"))),
            "teacher_sim": macro(json.load(open(root / "results" / "p3_teacher_sim.json")))}
-    json.dump({"config": choice, "students": table, "references": ref},
+    json.dump({"config": choice, "teacher": tname, "students": table, "references": ref},
               open(root / "results" / "phase4_summary.json", "w"), indent=1)
-    print(f"\n=== Phase 4 (simulation {choice}): test macro recall at 0.1 / 1 FA/h")
+    print(f"\n=== Phase 4 (simulation {choice}, teacher {tname}): test macro recall at 0.1 / 1 FA/h")
     for k, v in ref.items():
         print(f"{k:30s} {v[0.1]:.1%} / {v[1.0]:.1%}")
     for t in table:
