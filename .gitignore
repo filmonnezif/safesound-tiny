@@ -18,3 +18,10 @@ __pycache__/
 # esp-idf
 firmware/**/build/
 firmware/**/sdkconfig.old
+paper/*.aux
+paper/*.log
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.out
