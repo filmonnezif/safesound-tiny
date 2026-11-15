@@ -28,7 +28,7 @@ NOTEBOOKS = {
     ]),
     "02_04_train": ("Phases 2-4 as one background job (survives notebook disconnects); log on Drive. "
                     "Re-run the last cell to see progress.", "torchlibrosa", [
-        f"!nohup sh -c 'python -u -m safesound.phases 2 --root {ROOT} && python -u -m safesound.phases 3 --root {ROOT}"
+        f"!rm -f {ROOT}/checkpoints/*.lock; nohup sh -c 'python -u -m safesound.phases 2 --root {ROOT} && python -u -m safesound.phases 3 --root {ROOT}"
         f" && python -u -m safesound.phases 4 --root {ROOT}' > {ROOT}/run.log 2>&1 &",
         f"!sleep 5; grep -v -i warn {ROOT}/run.log | tail -n 40",
     ]),
