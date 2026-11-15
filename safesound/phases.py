@@ -59,16 +59,34 @@ def student_run(data, root, name, cfg, kind, size, steps, teacher=None):
     return model, res
 
 
+SEEDS = 3
+
+
+def run_name(cname, seed):
+    return f"p2_{cname}" if seed == 0 else f"p2_{cname}_s{seed}"
+
+
 def phase2(data, root, steps):
+    """Each config trained SEEDS times (independent runs); choice = best mean TUNING macro
+    recall at 1 FA/h (ties: at 0.1 FA/h). Seeds run outermost so a restart keeps whole sets."""
+    runs = {c: [] for c in CONFIGS}
+    for seed in range(SEEDS):
+        for cname, cfg in CONFIGS.items():
+            _, r = student_run(data, root, run_name(cname, seed), cfg, "logmel", "M", steps)
+            runs[cname].append({"tune": macro(r, "tune_recall"), "test": macro(r)})
     rows = {}
-    for cname, cfg in CONFIGS.items():
-        _, r = student_run(data, root, f"p2_{cname}", cfg, "logmel", "M", steps)
-        rows[cname] = {"tune": macro(r, "tune_recall"), "test": macro(r)}
-    best = max(rows, key=lambda k: (rows[k]["tune"][1.0], rows[k]["tune"][0.1]))
+    for cname, rs in runs.items():
+        rows[cname] = {split: {b: [round(float(np.mean([r[split][b] for r in rs])), 4),
+                                   round(float(np.std([r[split][b] for r in rs])), 4)] for b in bench.BUDGETS}
+                       for split in ("tune", "test")}
+        rows[cname]["runs"] = len(rs)
+    best = max(rows, key=lambda k: (rows[k]["tune"][1.0][0], rows[k]["tune"][0.1][0]))
     json.dump({"config": best, "rows": rows}, open(root / "results" / "phase2_choice.json", "w"), indent=1)
-    print("\n=== Phase 2: macro recall (tuning | test) at 0.1 and 1 FA/h")
+    print(f"\n=== Phase 2: macro recall, mean +- sd over {SEEDS} runs (tuning | test) at 0.1 and 1 FA/h")
     for k, v in rows.items():
-        print(f"{k:8s} tune {v['tune'][0.1]:.1%} {v['tune'][1.0]:.1%} | test {v['test'][0.1]:.1%} {v['test'][1.0]:.1%}"
+        t, e = v["tune"], v["test"]
+        print(f"{k:8s} tune {t[0.1][0]:.1%}+-{t[0.1][1]:.1%} {t[1.0][0]:.1%}+-{t[1.0][1]:.1%} | "
+              f"test {e[0.1][0]:.1%}+-{e[0.1][1]:.1%} {e[1.0][0]:.1%}+-{e[1.0][1]:.1%}"
               + ("   <- chosen on tuning" if k == best else ""))
 
 
