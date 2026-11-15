@@ -92,10 +92,16 @@ class Student(nn.Module):
             sys.path.insert(0, EAT_DIR)
         import contextlib
         import io
-        from models.mn.model import get_model
+        import os
         width, name = SIZES[size]
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.net = get_model(width_mult=width, pretrained_name=name)
+        cwd = os.getcwd()
+        os.chdir(EAT_DIR)                       # the repository reads files relative to its root
+        try:
+            from models.mn.model import get_model
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.net = get_model(width_mult=width, pretrained_name=name)
+        finally:
+            os.chdir(cwd)
         old = self.net.classifier[5]
         new = nn.Linear(old.in_features, len(CLASSES))
         pos = {m: i for i, m in enumerate(mids)}
