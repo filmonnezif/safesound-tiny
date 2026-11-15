@@ -97,7 +97,7 @@ def student_run(data, root, name, cfg, kind, size, steps, teacher=None):
     return model, res
 
 
-SEEDS = 3
+SEEDS = 2   # independent runs per config (a third can be added later with --seeds 2)
 
 
 def run_name(cname, seed):
