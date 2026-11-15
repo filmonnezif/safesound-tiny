@@ -17,29 +17,29 @@ yet they are usually evaluated with clip-level accuracy on curated clips, which 
 missed events and false alarms. We build and evaluate, under one locked protocol on real public
 recordings, a detector of six safety sounds (smoke/fire alarm, siren, doorbell, knock, baby cry,
 car horn) small enough for a \$5 microcontroller. A CNN14 teacher fine-tuned on AudioSet strong
-labels is distilled into depthwise-separable CNNs of 7--239\,KB (int8). The 239\,KB student keeps
-90\% of the teacher's event recall at 0.1 false alarm per hour (32.4\% vs.\ 35.8\%) and beats the
-3.7\,M-parameter YAMNet on every clip-level metric and in event recall at 1 false alarm per
-hour (+4.0 points, paired bootstrap $p=0.014$). A DSP simulation ablation shows that mixing
-real home backgrounds helps (+4.4 points) while synthetic room, occlusion and microphone models do
-not help on close-mic test audio. Finally, we fuse the students with classical detectors derived
-from the physics of each sound (Goertzel-style tone detection, ISO~8201 beep cycling, pitch-sweep
-tracking, onset regularity, harmonicity) under a recall-first protocol (95\% target for alarms and
-sirens). Every model reaches 90--97\% recall per class, and DSP evidence fused with the network
-cuts false alarms at equal recall where the sound has a clear physical signature, but the device
-total, summed over classes, is 13--19 alerts per hour in a real home: not livable. Budgeting
-false alarms on home audio with $k$-of-$n$ persistence instead keeps 71\% macro recall and 89\% on
-fire alarms at 1.8 device alerts per hour for the 239\,KB student (teacher: 97\% on fire alarms).
-A DSP wake gate that runs the classifier only when the physics-based evidence fires lets it sleep
-63\% of the time in a real home, saving about 60\% of the compute for a 0.7-point recall cost,
-whereas a pure energy gate loses 12 points. The int8 models export to TensorFlow Lite Micro with
-99.6\% decision agreement.
+labels is distilled into two student families: depthwise-separable CNNs of 7--239\,KB trained
+from scratch, and AudioSet-pretrained MobileNetV3 networks. The pretrained 0.7\,M-parameter
+student (int8) reaches 32.3\% / 62.5\% event recall at 0.1 / 1 false alarm per hour, against
+28.6\% / 59.5\% for the best from-scratch student at four times the compute, and 35.8\% / 66.8\%
+for the 80\,M-parameter teacher. A DSP simulation ablation shows that mixing real home
+backgrounds helps (+4.4 points) while synthetic room, occlusion and microphone models do not help
+on close-mic test audio. We then fuse the network with classical detectors derived from the
+physics of each sound (tone detection, ISO~8201 beep cycling, pitch-sweep tracking, onset
+regularity, harmonicity). Putting recall first (95\% target for alarms and sirens) reaches
+90--97\% recall per class but costs 13--33 alerts per hour in a real home, which is not livable.
+Budgeting false alarms on home audio with $k$-of-$n$ persistence instead keeps 75\% macro recall
+and 92\% on fire alarms at 1.0 device alert per hour. A DSP wake gate built from the same
+evidence lets the classifier sleep 63\% of the time in a real home for under one point of recall,
+whereas a pure energy gate loses 12 points.
 \end{abstract}
 
 \section{Introduction}
 For a DHH person living alone, a missed smoke alarm is a safety failure, while a false alert is
-an annoyance. Commercial and research sound-awareness systems~\cite{homesound,soundwatch} use
-neural audio classifiers and report clip-level accuracy. Two gaps follow. First, accuracy on
+an annoyance, but only up to a point: in a field study of mobile sound recognition, false
+positives were the most common error and led participants to ignore
+notifications~\cite{notthereyet}. Commercial and research sound-awareness
+systems~\cite{homesound,soundwatch,protosound} use neural audio classifiers and report
+clip-level accuracy. Two gaps follow. First, accuracy on
 rare sounds is uninformative: on our test set, a detector that never fires is 98.5\% accurate.
 Second, false alarms, the reason users silence such devices, are rarely measured per hour of
 real audio. We therefore evaluate event recall at a fixed false-alarm rate per hour, with
@@ -47,10 +47,35 @@ thresholds fixed on separate tuning data, on 910 real event clips and 37\,h of r
 audio, and later switch to a recall-first operating point.
 
 Contributions: (i) a locked public benchmark and protocol for DHH safety-sound detection with
-false alarms per hour of real home audio; (ii) a distilled int8 student family (7--239\,KB) for
-the ESP32-S3 and its size/recall trade-off; (iii) an ablation of DSP-based training simulation;
-(iv) physics-based DSP detectors fused with the network under a recall-first protocol; (v) a DSP
-wake gate that cuts the classifier's duty cycle in a real home.
+false alarms per hour of real home audio; (ii) two distilled int8 student families for the
+ESP32-S3, trained from scratch (7--239\,KB) and AudioSet-pretrained, and their size/compute/recall
+trade-off; (iii) an ablation of DSP-based training simulation;
+(iv) physics-based DSP detectors fused with the network, and the measured cost of putting recall
+first; (v) a device-level alert policy that makes the false-alarm rate livable; (vi) a DSP wake
+gate that cuts the classifier's duty cycle in a real home.
+
+\section{Related work}
+\textbf{Sound awareness for DHH users.} HomeSound~\cite{homesound} and SoundWatch~\cite{soundwatch}
+brought deep sound classifiers to in-home displays and smartwatches, and
+ProtoSound~\cite{protosound} added personalisation from a few user recordings. These systems are
+evaluated with clip-level accuracy and user studies; the field study in~\cite{notthereyet} reports
+that false positives dominate the errors users experience. We complement this line of work with
+an event-level evaluation of recall against false alarms per hour.
+
+\textbf{Sound event detection and its metrics.} Large pretrained audio networks such as
+PANNs~\cite{panns} and YAMNet~\cite{yamnet} are trained on AudioSet~\cite{audioset}; temporally
+strong labels~\cite{strong} improve event detection. Detection of rare events such as baby cries
+was a DCASE~2017 task~\cite{dcase2017}, and the polyphonic sound detection score~\cite{psds}
+summarises detection over operating points. A safety device has one operating point, so we
+report recall at a stated false-alarm rate instead of an area under a curve.
+
+\textbf{Small models.} DS-CNNs~\cite{dscnn} are a standard microcontroller architecture, and
+knowledge distillation~\cite{kd} transfers a large model's behaviour to a small one; Cerutti et
+al.~\cite{cerutti} distilled a pretrained network into a recurrent model for a Cortex-M4.
+EfficientAT~\cite{efficientat} distils audio transformers into MobileNetV3~\cite{mobilenetv3}
+networks on all of AudioSet and releases them at widths down to 0.1; we use them as pretrained
+students. Integer quantisation follows~\cite{jacob}, and soundscape synthesis for training
+follows the idea of Scaper~\cite{scaper}.
 
 \section{Data and protocol}
 \textbf{Sources.} Real events come from the AudioSet strong-label evaluation set~\cite{audioset,strong}
@@ -82,9 +107,9 @@ are alerts on negative audio, per hour. Thresholds are set on the tuning negativ
 \begin{figure}[t]\centering
 \begin{tikzpicture}[font=\scriptsize, node distance=3mm and 4mm, b/.style={draw, rounded corners, align=center, minimum height=6mm}]
 \node[b] (mic) {mic\\16\,kHz};
-\node[b, right=of mic] (fe) {log-mel\\40$\times$100};
+\node[b, right=of mic] (fe) {log-mel};
 \node[b, above=of fe, yshift=-1mm] (gate) {DSP wake gate\\(always on)};
-\node[b, right=of fe] (cnn) {DS-CNN\\int8};
+\node[b, right=of fe] (cnn) {CNN\\int8};
 \node[b, below=of fe] (dsp) {DSP detectors\\(tone, cycling,\\sweep, onsets)};
 \node[b, right=of cnn, yshift=-5mm] (fu) {fusion /\\recall-first\\thresholds};
 \node[b, right=of fu] (out) {alert};
@@ -105,7 +130,56 @@ on 2\,s windows with SpecAugment~\cite{specaug} (AdamW, one-cycle, lr $10^{-4}$,
 32/64/128/192 and 4/4/5/6 blocks. Students are trained on simulated examples generated on the fly
 with $0.5\,\mathrm{BCE}(\text{labels}) + 0.5\,\mathrm{BCE}(\text{teacher})$~\cite{kd}, the
 teacher scoring the same simulated example. Int8: batch norm folded, weights symmetric per
-channel, activations asymmetric per tensor (TFLite scheme~\cite{tflm}).
+channel, activations asymmetric per tensor (TFLite scheme~\cite{tflm,jacob}).
+
+\textbf{Pretrained students.} Training a tiny network from scratch on about 4{,}000 event clips
+wastes what is known about sound in general. As an alternative we fine-tune EfficientAT
+MobileNetV3 models~\cite{efficientat} (width 0.1, 0.2, 0.4; pre-trained on all of AudioSet by
+transformer-to-CNN distillation) with the same simulated data, the same loss and the same
+teacher (AdamW, one-cycle, lr $5\cdot10^{-4}$, 10k steps of 128 examples, light SpecAugment);
+the 6-way head again starts from the AudioSet rows of each class. Their front end (25\,ms window,
+10\,ms hop, 128 mel bands to 15\,kHz at 32\,kHz) is computed natively on 16\,kHz audio as the
+device would: a 512-point FFT gives the same 31.25\,Hz bins, the 32\,kHz pre-emphasis is applied
+as its magnitude response, and the bands above 8\,kHz receive no energy. Int8 is simulated as for
+the DS-CNN, with every convolution, non-linearity, squeeze-excitation and residual output
+quantised.
+
+\textbf{DSP detectors.} Table~\ref{tab:dsp} lists the classical detectors. They share one STFT
+(64\,ms Hann window, 10\,ms hop) and a per-bin noise floor tracked by a minimum follower that
+drops at once and rises 6\,dB per 2\,s. A tone is a spectral peak that stands out from the
+median of its band (prominence) and from the floor (SNR); this per-bin test is a bank of
+Goertzel filters~\cite{goertzel} computed with one FFT. Each detector maps its evidence in the
+last 2\,s to a score in $[0,1]$ every 0.5\,s, causally, at about 5\,ms of desktop CPU time per
+second of audio.
+
+\begin{table}[t]\centering\caption{Classical DSP detectors (evidence within a 2\,s window)}\label{tab:dsp}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lp{0.74\columnwidth}}\toprule
+Class & Evidence \\ \midrule
+alarm & tone in 2--5\,kHz louder than the 0.1--1.5\,kHz band, fixed frequency, switching on and off (ISO~8201 pattern~\cite{iso8201}) \\
+siren & tonal peak in 0.5--1.8\,kHz present most of the window, sweeping smoothly over more than 150\,Hz \\
+doorbell & tonal onset in 0.5--3\,kHz that keeps ringing 250\,ms later and decays \\
+knock & two or more broadband onsets (spectral flux, 0.2--4\,kHz) spaced regularly by 80--700\,ms \\
+baby cry & voiced frames with $f_0$ in 300--650\,Hz, harmonics 1--3 present, no sub-harmonic, moving pitch, for 0.4\,s or more \\
+car horn & loud tone in 0.25--1.5\,kHz, steady pitch, level not decaying \\
+loud & broadband level 10--30\,dB above the tracked floor (class-agnostic safety net, wake gate G1) \\ \bottomrule
+\end{tabular}\end{table}
+
+\textbf{Decision logic.} Let $p_t$ be the network's probability for a class in window $t$ and
+$d_t$ the class's DSP score. The fused score is
+\begin{equation}
+s_t=\sigma\!\left(w_0+w_1\,\mathrm{logit}\,p_t+w_2\,d_t+w_3\,d_t\,\mathrm{logit}\,p_t\right),
+\end{equation}
+with weights fitted by logistic regression on tuning windows. With persistence, the class alerts
+when
+\begin{equation}
+\sum_{i=0}^{n-1}\mathbf{1}\!\left[s_{t-i}\ge\theta\right]\ \ge\ k,
+\end{equation}
+which is a threshold on the $k$-th largest of the last $n$ scores. The wake gate is open in
+window $t$ if $\max_j d_{j,u}\ge\tau$ for some $u\in\{t-H,\dots,t\}$, where $j$ runs over the
+detectors; the network runs only in open windows and its score is zero otherwise. All of
+$\theta$, $(k,n)$ and the method are chosen per class on the tuning set, and $\tau$, $H$ once
+for all classes.
 
 \textbf{DSP training simulation} (cumulative configurations): (B) mixing a real SINS background
 at SNR $\mathcal{U}(-5,25)$\,dB and a random level; (C) a statistical room impulse
@@ -121,19 +195,26 @@ reach only 14--17\% event recall at 0.1\,FA/h. Fine-tuning CNN14 doubles it (35.
 clip-level AP barely moves (0.717$\to$0.731): clip-level metrics hide the strict-false-alarm
 regime that matters for a safety device.
 
-\begin{table}[t]\centering\caption{Test results. Event recall at 0.1 / 1 FA/h (thresholds from
-tuning) and clip-level AUC / AP. Students distilled; int8 unless noted.}\label{tab:main}
-\setlength{\tabcolsep}{3.5pt}
-\begin{tabular}{lrrrrr}\toprule
-Model & Size & @0.1 & @1 & AUC & AP \\ \midrule
-YAMNet zero-shot & 3.7\,M p. & 13.9 & 55.5 & .948 & .635 \\
-CNN14 zero-shot & 80\,M p. & 16.6 & 66.1 & .974 & .717 \\
-CNN14 fine-tuned (teacher) & 80\,M p. & \textbf{35.8} & \textbf{66.8} & \textbf{.978} & \textbf{.731} \\ \midrule
-Student S & 6.7\,KB & 11.1 & 42.7 & .950 & .490 \\
-Student M & 21.5\,KB & 22.7 & 53.0 & .962 & .592 \\
-Student L & 93\,KB & 27.8 & 57.1 & .965 & .650 \\
-Student XL & 239\,KB & 28.6 & 59.5 & .965 & .661 \\
-Student XL (float) & & 32.4 & 59.3 & .965 & .667 \\ \bottomrule
+\begin{table}[t]\centering\caption{Test results. Event recall (\%) at 0.1 / 1 FA/h per class
+(thresholds from tuning), clip-level AUC / AP, parameters and multiply-accumulates per 2\,s
+inference. Students are distilled and int8 unless noted.}\label{tab:main}
+\setlength{\tabcolsep}{2.6pt}
+\begin{tabular}{lrrrrrr}\toprule
+Model & Params & MAC & @0.1 & @1 & AUC & AP \\ \midrule
+YAMNet zero-shot & 3.7\,M & & 13.9 & 55.5 & .948 & .635 \\
+CNN14 zero-shot & 80\,M & & 16.6 & 66.1 & .974 & .717 \\
+CNN14 fine-tuned (teacher) & 80\,M & $\approx$2\,G & \textbf{35.8} & \textbf{66.8} & \textbf{.978} & \textbf{.731} \\ \midrule
+\multicolumn{7}{l}{\emph{DS-CNN, from scratch}} \\
+S & 6.3\,k & 2.6\,M & 11.1 & 42.7 & .950 & .490 \\
+M & 21\,k & 8.8\,M & 22.7 & 53.0 & .962 & .592 \\
+L & 92\,k & 36\,M & 27.8 & 57.1 & .965 & .650 \\
+XL & 239\,k & 89\,M & 28.6 & 59.5 & .965 & .661 \\
+XL (float) & & & 32.4 & 59.3 & .965 & .667 \\ \midrule
+\multicolumn{7}{l}{\emph{MobileNetV3, AudioSet-pretrained}} \\
+MN01 & 57\,k & 3.7\,M & 11.3 & 36.5 & .927 & .435 \\
+MN02 & 191\,k & 8.4\,M & 23.7 & 53.9 & .966 & .612 \\
+MN04 & 716\,k & 23\,M & \textbf{32.3} & \textbf{62.5} & \textbf{.977} & \textbf{.716} \\
+MN04 (float) & & & 32.4 & 62.7 & .978 & .731 \\ \bottomrule
 \end{tabular}\end{table}
 
 \textbf{Simulation ablation} (Table~\ref{tab:sim}, student M, hard labels, two runs each).
@@ -155,24 +236,48 @@ E + microphone model & 23.7 & 49.1 & 47.1 \\ \bottomrule
 \end{tabular}\end{table}
 
 \textbf{Distillation and size.} Distillation lifts student M from 22.1\% to 28.1\% at 0.1\,FA/h
-and from 49.3\% to 52.5\% at 1\,FA/h (float; tuning agrees). Recall grows with size
-(Fig.~\ref{fig:size}); XL keeps 90\% of the teacher's strict-budget recall with 1/330 of its
+and from 49.3\% to 52.5\% at 1\,FA/h (float; tuning agrees). Recall grows with size; XL keeps 90\% of the teacher's strict-budget recall with 1/330 of its
 parameters, and beats YAMNet at both budgets and on every clip-level metric (at 1\,FA/h by
 +4.0 points, paired bootstrap 95\% CI [0.4, 7.6]). Int8 is lossless at
 1\,FA/h for L and XL and costs 0--6 points at 0.1\,FA/h. A PCEN front end~\cite{pcen} is worse
 than log-mel here (18.2\% vs.\ 28.1\% at 0.1\,FA/h for M). Real home audio (SINS) produces at
 most 0.15 FA/h for every model; the budget is spent on the varied AudioSet negatives.
 
+\textbf{Pretrained students.} Starting from AudioSet-pretrained weights is the larger lever
+(Table~\ref{tab:main}, Fig.~\ref{fig:size}). MN04 has three times the parameters of the XL
+DS-CNN but needs a quarter of its multiply-accumulates, because MobileNetV3 reduces resolution
+early, and it gains 3.7 / 3.0 points of recall at 0.1 / 1\,FA/h in int8, closing 43--57\% of the
+gap to the teacher; in float its clip-level AP equals the teacher's (0.731). Its simulated int8
+version loses 0.1--0.2 points. Pretraining does not help the smallest networks as much: MN02 is
+level with the from-scratch M at equal compute (23.7 / 53.9 against 22.7 / 53.0), and MN01
+reaches 18.4 / 49.8 in float but loses 13 points to quantisation. Table~\ref{tab:cls} gives the
+per-class picture: baby cry and car horn are the hard classes for every model, and fine-tuning
+trades some alarm and siren recall of the zero-shot CNN14 at 1\,FA/h for large gains on doorbell,
+knock and the strict budget.
+
+\begin{table}[t]\centering\caption{Per-class event recall (\%) at 0.1 / 1 FA/h per class}\label{tab:cls}
+\setlength{\tabcolsep}{2.2pt}
+\begin{tabular}{lrrrrrr}\toprule
+Model & alarm & siren & doorb. & knock & baby & horn \\ \midrule
+YAMNet zero-shot & 36/70 & 20/73 & 6/41 & 9/59 & 11/42 & 1/47 \\
+CNN14 zero-shot & 6/89 & 27/81 & 1/48 & 25/66 & 14/59 & 27/53 \\
+Teacher & 48/83 & 30/76 & 40/59 & 55/75 & 5/47 & 36/61 \\
+XL int8 & 38/72 & 33/66 & 41/61 & 21/73 & 18/36 & 20/49 \\
+MN04 int8 & 39/81 & 42/69 & 31/59 & 45/71 & 9/41 & 27/54 \\ \bottomrule
+\end{tabular}\end{table}
+
 \begin{figure}[t]\centering
-\begin{tikzpicture}\begin{axis}[width=\columnwidth, height=4.2cm, xmode=log, xlabel={int8 weights (KB)},
-ylabel={event recall (\%)}, legend pos=south east, legend style={font=\scriptsize}, ymin=0, ymax=75,
-xtick={7,21.5,93,239}, xticklabels={7,22,93,239}, tick label style={font=\scriptsize}, label style={font=\scriptsize}]
-\addplot+[mark=*] coordinates {(6.7,42.7)(21.5,53.0)(93,57.1)(238.7,59.5)}; \addlegendentry{@1 FA/h}
-\addplot+[mark=square*] coordinates {(6.7,11.1)(21.5,22.7)(93,27.8)(238.7,28.6)}; \addlegendentry{@0.1 FA/h}
-\addplot[dashed, domain=5:300] {66.8}; \addlegendentry{teacher @1}
-\addplot[dotted, domain=5:300] {35.8}; \addlegendentry{teacher @0.1}
+\begin{tikzpicture}\begin{axis}[width=\columnwidth, height=4.6cm, xmode=log, xlabel={multiply-accumulates per inference (M)},
+ylabel={event recall (\%)}, legend style={font=\tiny, at={(0.5,-0.36)}, anchor=north}, legend columns=3, ymin=0, ymax=75,
+tick label style={font=\scriptsize}, label style={font=\scriptsize}]
+\addplot+[mark=*, blue] coordinates {(2.6,42.7)(8.8,53.0)(36.2,57.1)(88.6,59.5)}; \addlegendentry{DS-CNN @1}
+\addplot+[mark=square*, blue, dashed] coordinates {(2.6,11.1)(8.8,22.7)(36.2,27.8)(88.6,28.6)}; \addlegendentry{DS-CNN @0.1}
+\addplot+[mark=triangle*, red] coordinates {(3.7,36.5)(8.4,53.9)(23.3,62.5)}; \addlegendentry{MobileNetV3 @1}
+\addplot+[mark=diamond*, red, dashed] coordinates {(3.7,11.3)(8.4,23.7)(23.3,32.3)}; \addlegendentry{MobileNetV3 @0.1}
+\addplot[black, dashed, domain=2:100] {66.8}; \addlegendentry{teacher @1}
+\addplot[black, dotted, domain=2:100] {35.8}; \addlegendentry{teacher @0.1}
 \end{axis}\end{tikzpicture}
-\caption{Recall of int8 students vs.\ size.}\label{fig:size}\end{figure}
+\caption{Recall of int8 students against compute (FA/h per class).}\label{fig:size}\end{figure}
 
 \textbf{Recall-first operation with DSP detectors.} A missed fire alarm costs more than a
 false buzz, so we also fix a target recall per class on the tuning set (95\% for alarm and siren,
@@ -181,16 +286,6 @@ counts as detected when the decision is positive during it, even if the buzz was
 the refractory period after an earlier alert of the same class (the user was alerted). Per class
 we choose, on tuning, among the network, a smoothed network (mean of two windows), the network OR
 a calibrated DSP score, and a logistic fusion of network and DSP scores.
-
-The DSP detectors are derived from the physics of each sound: a narrowband tone in 2--5\,kHz
-that dominates the low band at a fixed frequency and switches on and off (ISO~8201
-signal~\cite{iso8201}; per-bin peak prominence, i.e.\ a Goertzel-style~\cite{goertzel} tone test on
-all bins); a sustained tonal peak in 500--1800\,Hz with a smooth sweep of more than 150\,Hz
-(siren); a tonal onset that keeps ringing and decays (chime); broadband onsets with regular
-80--700\,ms spacing (knock); voicing with $f_0$ in 300--650\,Hz, harmonics 1--3 and no
-sub-harmonic energy, with pitch movement (baby cry); a loud steady tone that does not decay
-(horn); and a class-agnostic level jump over a tracked noise floor (safety net). All run causally
-with a minimum-follower noise floor and cost about 5\,ms per second of audio on a desktop CPU.
 
 \begin{table}[t]\centering\caption{Recall first (targets 95/90\%): test recall and false alarms
 per hour \emph{per class} (AudioSet / home; a device total is the sum over classes). Macro over
@@ -251,19 +346,37 @@ most but loses 12 points of recall, also on events whose onset lies inside the c
 many safety sounds are not much louder than the room. The DSP-evidence gate lets the classifier
 sleep 63\% of the time in the real home for 0.7 points of recall (inside the confidence interval),
 saving about 60\% of the compute, and removes a quarter of the home false alarms as a side effect;
-on busy television-like audio it correctly stays open.
+on busy television-like audio it correctly stays open. Fig.~\ref{fig:gate} shows the whole
+trade-off, and that it carries over to the pretrained student: MN04 with the same gate keeps
+90.8\% recall (91.4\% ungated) at a 37\% duty cycle. Its classifier and front end need about
+48\,M MAC/s always on and about 23\,M operations per second gated, an eighth of the always-on XL
+DS-CNN.
+
+\begin{figure}[t]\centering
+\begin{tikzpicture}\begin{axis}[width=\columnwidth, height=4.4cm, xlabel={classifier duty cycle in the real home (\%)},
+ylabel={recall-first recall (\%)}, legend pos=south east, legend style={font=\tiny}, xmin=0, xmax=100, ymin=64, ymax=94,
+tick label style={font=\scriptsize}, label style={font=\scriptsize}]
+\addplot+[mark=*, blue] coordinates {(100,91.2)(74,90.9)(48,90.8)(37,90.5)(29,89.6)(23,88.0)}; \addlegendentry{XL, DSP gate}
+\addplot+[mark=triangle*, red] coordinates {(100,91.4)(74.3,91.2)(48,91.1)(36.6,90.8)(28.8,90.3)(23.5,88.7)(19.4,86.3)(15.6,83.0)(10.7,79.2)(4.1,73.7)}; \addlegendentry{MN04, DSP gate}
+\addplot+[mark=square*, brown, dashed] coordinates {(100,91.2)(13,79.1)(10,75.1)(7,72.4)(5,70.1)(4,67.5)}; \addlegendentry{XL, energy gate}
+\end{axis}\end{tikzpicture}
+\caption{Wake gate: recall against how often the classifier runs in the real home (gate
+threshold $\tau$ from 0 to 0.9, $H$=4).}\label{fig:gate}\end{figure}
 
 \textbf{A livable alert policy.} The rates above are per class; a device alerts for all six, so
-the user lives with their sum. Recall-first on alarm and siren then means 13--19 alerts per hour
+the user lives with their sum. Recall-first on alarm and siren then means 13--33 alerts per hour
 in a quiet home (Table~\ref{tab:policy}, ``tiered''), enough to make users switch the device off.
 We therefore add persistence ($k$ of the last $n$ windows above threshold, chosen per class on
 tuning; detection tolerance grows by the added delay) and budget the false alarms on home audio,
 the deployment environment (SINS tuning sessions, which include television), to a total of 1 or
-3 alerts per hour. At 1.8 device alerts per hour on test the 239\,KB student keeps 71\% macro
-recall and 89\% on fire alarms, and the teacher 97\% on fire alarms; persistence alone halves the
-fire-alarm false alarms at equal recall. The remaining gap is the student's capacity on alarms.
+3 alerts per hour. With a 1-per-hour budget the XL DS-CNN keeps 71\% macro recall and 89\% on
+fire alarms at 1.8 device alerts per hour on test; the pretrained MN04 does better on both axes,
+75.2\% [72.2, 78.2] macro recall and 92\% on fire alarms at 1.0 alert per hour, within two points
+of the 80\,M-parameter teacher. Persistence is chosen for most classes; for the XL fire alarm it
+halves the false alarms at equal recall. A 3-per-hour budget mainly buys siren recall
+(77\%$\to$90\% for MN04).
 Home rates are optimistic for a new home (tuning and test sessions come from the same home), and
-with loud television-like audio the rate rises to about 40 per hour.
+with loud television-like audio the rate rises to 28--44 per hour.
 
 \begin{table}[t]\centering\caption{Device-level policies (wake gate on): test recall per class,
 macro, and \emph{total} alerts per hour in the home and on TV-like AudioSet audio.}\label{tab:policy}
@@ -271,10 +384,13 @@ macro, and \emph{total} alerts per hour in the home and on TV-like AudioSet audi
 \begin{tabular}{llrrrrrrrrr}\toprule
 Policy & Model & alarm & siren & door & knock & baby & horn & macro & home & TV \\ \midrule
 tiered & XL & 97 & 94 & 49 & 56 & 23 & 19 & 56.2 & 18.5 & 192 \\
+tiered & MN04 & 95 & 94 & 52 & 63 & 33 & 15 & 58.7 & 33.1 & 173 \\
 tiered & teacher & 97 & 96 & 51 & 61 & 41 & 36 & 63.7 & 12.9 & 187 \\
 home 1/h & XL & 89 & 70 & 72 & 77 & 59 & 59 & 71.2 & 1.8 & 37 \\
+home 1/h & MN04 & 92 & 77 & 77 & 78 & 67 & 60 & \textbf{75.2} & \textbf{1.0} & 28 \\
 home 1/h & teacher & 97 & 84 & 80 & 73 & 58 & 71 & 77.1 & 1.6 & 44 \\
 home 3/h & XL & 89 & 87 & 79 & 74 & 64 & 67 & 76.6 & 4.4 & 121 \\
+home 3/h & MN04 & 91 & 90 & 80 & 80 & 71 & 68 & 80.0 & 2.8 & 77 \\
 home 3/h & teacher & 97 & 90 & 80 & 77 & 64 & 76 & 80.6 & 2.5 & 96 \\ \bottomrule
 \end{tabular}\end{table}
 
@@ -285,20 +401,69 @@ Lite Micro~\cite{tflm} (convolution, depthwise convolution, pad, mean, max, add,
 connected). On 2{,}929 windows of real test clips the real int8 models agree with the float
 models on 99.5--99.6\% of decisions (mean probability error 0.004--0.007) and match our simulated
 int8 model, so the int8 results above stand. The XL student needs 89\,M multiply-accumulates per
-inference (two per second); measuring latency and power on the ESP32-S3 is future work.
+inference (two per second). The pretrained MN04 has 716\,k parameters (about 0.7\,MB of int8
+weights, within the flash of an ESP32-S3 module) and 23\,M multiply-accumulates per inference;
+its int8 results come from simulation only, and its TensorFlow Lite export (hard-swish and
+squeeze-excitation are supported operators) and all on-device latency and power measurements are
+future work.
+
+\section{Discussion and limitations}
+\textbf{What DSP is for.} The hand-designed detectors are poor classifiers on their own: on real
+audio, speech, music and appliances also contain tones, sweeps and onsets. Their value is as
+cheap, independent evidence: fused with the network they lower the false-alarm cost of a given
+recall for the sounds with a strong physical signature, as a persistence rule they remove one-off
+triggers, and as a wake gate they decide when the network needs to run at all. An energy
+detector, the usual wake-up choice, fails here because alarms heard from another room are not
+loud.
+
+\textbf{What recall costs.} At a per-class budget of 1 false alarm per hour the best small model
+detects about 60\% of events; pushing recall to 90--97\% multiplies false alarms by one to two
+orders of magnitude. No decision rule we tried removes this trade-off; a better network moves it
+(MN04 against the DS-CNN), which suggests that stronger pretrained students and more training
+events are the way forward rather than more decision logic.
+
+\textbf{Recommended configuration.} Table~\ref{tab:rec} collects the configuration we would
+deploy: the pretrained MN04 student in int8, the DSP gate, per-class fusion and persistence, and
+false-alarm budgets set on home audio. A user who prefers fewer missed sirens can move from the
+1-per-hour to the 3-per-hour budget; the fire-alarm recall is already at 91--92\% in both.
+
+\begin{table}[t]\centering\caption{Recommended configuration and its measured behaviour}\label{tab:rec}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{ll}\toprule
+Network & MobileNetV3 width 0.4, AudioSet-pretrained, int8 \\
+Size, compute & 716\,k parameters, 23\,M MAC per 2\,s window \\
+Wake gate & DSP evidence, $\tau$=0.3, $H$=4 (2\,s hangover) \\
+Classifier duty & 37\% in the real home, 92\% on TV-like audio \\
+Compute & $\approx$23\,M ops/s gated, 48\,M always on \\
+Policy & home budget 1/h, per-class fusion and $k$-of-$n$ \\
+Recall & 75.2\% macro; fire alarm 92\%, siren 77\% \\
+Alerts & 1.0 per hour in the home, 28 on TV-like audio \\ \bottomrule
+\end{tabular}\end{table}
+
+\textbf{Reproducibility.} All data are public (AudioSet strong labels, FSD50K, SINS) and the
+code that builds the data, trains every model and produces every table is released; each step
+resumes from saved state, and the whole study runs in about a day on one cloud GPU. The test set
+is identified by a hash of its clip list.
+
+\textbf{Limitations.} Real negatives come from one home, which also provides the tuning data for
+the home budget, so home false-alarm rates are optimistic for a new home; television-like audio
+remains hard (28--44 alerts per hour). Test events are mostly close-mic recordings, so the
+far-field training simulation could not show a benefit. The ablation has two runs per
+configuration, and each pretrained student is a single run. AudioSet-pretrained models have seen
+our tuning clips' weak labels during pre-training, which may make tuning thresholds slightly
+optimistic; test clips were never seen. Latency, memory and power on the microcontroller are not
+measured.
 
 \section{Conclusion}
-Under a strict, locked, event-level protocol on real recordings, a 239\,KB distilled int8 CNN
-retains most of a large teacher's ability to catch safety sounds and outperforms widely used
-on-device models. When recall comes first, all models reach 90--97\% recall per class, but at a
-device-level cost of 13--19 alerts per hour in a home. Budgeting false alarms on home audio with
-$k$-of-$n$ persistence gives a livable 1.8 alerts per hour while keeping 89\% (student) to 97\%
-(teacher) recall on fire alarms. Physics-based DSP detectors earn their place not as stand-alone
-classifiers but as evidence that lowers the false-alarm cost of high recall, and as a wake gate
-that lets the classifier sleep most of the time in a real home at almost no recall cost; a pure
-energy gate does not work for these sounds. Limitations: one home for real negatives (also used to
-tune the home budget), close-mic test events, two runs per ablation configuration, and no
-on-device measurements yet.
+Under a strict, locked, event-level protocol on real recordings, small int8 CNNs retain most of
+a large teacher's ability to catch safety sounds and outperform widely used on-device models;
+starting the student from AudioSet-pretrained weights gives the best small model, at a quarter of
+the compute of a network trained from scratch. Putting recall first reaches 90--97\% recall per
+class but floods a home with alerts; budgeting false alarms on home audio with persistence gives
+about one alert per hour while keeping 75\% of all events and 92\% of fire alarms. Classical DSP
+earns its place as fusion evidence, as persistence logic and as a wake gate that lets the
+classifier sleep most of the time in a real home; a pure energy gate does not work for these
+sounds.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}

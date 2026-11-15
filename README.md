@@ -51,18 +51,20 @@ of real home audio without the target sounds (SINS, CHiME-Home, DCASE home scene
 
 ## Status (2026-11-15)
 
-Done: phases 0-5, int8 TFLite export, paper draft ([paper/main.tex](paper/main.tex)); results in
-[docs/results.md](docs/results.md). Remaining: phase 6 on hardware (ESP32-S3 latency, memory, power).
+Done: phases 0-6, int8 TFLite export of the DS-CNN students, 6-page paper draft
+([paper/main.tex](paper/main.tex)); results in [docs/results.md](docs/results.md), independent
+review in [docs/review.md](docs/review.md). Remaining: hardware (ESP32-S3 latency, memory, power)
+and the TFLite export of the pretrained student.
 
-- Teacher (CNN14 fine-tuned): 35.8% / 66.8% event recall at 0.1 / 1 false alarm per hour.
-- Best tiny model: distilled DS-CNN XL, 239 KB int8 (318 KB TFLite): 28.6% / 59.5%; beats YAMNet
-  on every clip-level metric.
-- Recall first (95% alarm/siren, 90% others): 90-97% recall per class; DSP fusion cuts home false
-  alarms 24-36% at equal recall; with the loud-sound safety net the XL model reaches 95.5% recall
-  at 16 false alarms per hour of real home audio.
-- Energy: a DSP wake gate runs the classifier only when physics-based evidence fires; in the real
-  home the classifier sleeps 63% of the time (~60% compute saved) for 0.7 points of recall.
-- Independent review and what was done about it: [docs/review.md](docs/review.md).
+- Teacher (CNN14 fine-tuned): 35.8% / 66.8% event recall at 0.1 / 1 false alarm per hour per class.
+- Best small model: AudioSet-pretrained MobileNetV3 (EfficientAT width 0.4, 716 k parameters,
+  23 M MAC per window), int8 simulated: 32.3% / 62.5%. Best from-scratch DS-CNN (239 KB, 89 M MAC):
+  28.6% / 59.5%.
+- Recall first (95% alarm/siren) reaches 90-97% recall per class but 13-33 alerts per hour in a home.
+- Livable policy (false-alarm budget on home audio, k-of-n persistence, DSP fusion): 75% macro
+  recall, 92% on fire alarms, 1.0 alert per hour in the home.
+- Energy: a DSP wake gate lets the classifier sleep 63% of the time in the real home for under one
+  point of recall; a pure energy gate loses 12 points.
 
 ## Layout
 

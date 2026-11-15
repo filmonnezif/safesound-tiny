@@ -247,3 +247,41 @@ Findings:
 - Caveats: tuning and test home audio come from the same home (different sessions), so home
   rates are optimistic for a new home; test home rates exceed the tuning budget (1.8 vs 1.0/h),
   the same tuning-to-test shift seen before. With loud TV-like audio the rate is 37-44 per hour.
+
+## Phase 6: AudioSet-pretrained students (`python -m safesound.phase6`)
+
+New technique (from a literature search): instead of training the tiny CNN from scratch, fine-tune
+EfficientAT MobileNetV3 models (Schmid et al., ICASSP 2023; pre-trained on all of AudioSet by
+transformer-to-CNN distillation) with the same simulated data, loss and CNN14 teacher. Front end
+computed natively at 16 kHz (512-FFT, 128 mel bands, bands above 8 kHz empty). Int8 is simulated
+(not yet exported to TFLite). One run per size.
+
+| Student | Params | MAC / inference | float @0.1 / @1 | int8 @0.1 / @1 | clip AUC / AP (int8) |
+|---|---|---|---|---|---|
+| MN01 (width 0.1) | 57 k | 3.7 M | 18.4 / 49.8 | 11.3 / 36.5 | .927 / .435 |
+| MN02 (width 0.2) | 191 k | 8.4 M | 20.2 / 56.7 | 23.7 / 53.9 | .966 / .612 |
+| **MN04 (width 0.4)** | 716 k | 23.3 M | 32.4 / 62.7 | **32.3 / 62.5** | .977 / .716 |
+| reference: DS-CNN XL (scratch) | 239 k | 88.6 M | 32.4 / 59.3 | 28.6 / 59.5 | .965 / .661 |
+| reference: teacher CNN14 | 80 M | ~2 G | 35.8 / 66.8 | | .978 / .731 |
+
+MN04 int8, device level (wake gate on; compare phase 5c):
+
+| Policy | alarm | siren | doorbell | knock | baby cry | horn | macro | alerts/h home | TV-like/h |
+|---|---|---|---|---|---|---|---|---|---|
+| tiered | 95 | 94 | 52 | 63 | 33 | 15 | 58.7 | 33.1 | 173 |
+| **home1** | 92 | 77 | 77 | 78 | 67 | 60 | **75.2 [72.2, 78.2]** | **1.02** | 28 |
+| home3 | 91 | 90 | 80 | 80 | 71 | 68 | 80.0 | 2.82 | 77 |
+
+Wake gate (G2, tau 0.3, H 4) with MN04: recall-first recall 90.8% (91.4% ungated), classifier
+duty 37% in the home; about 23 M ops/s gated against 48 M always on (XL DS-CNN always on: 178 M).
+
+Findings:
+- Pretraining is the larger lever at width 0.4: +3.7 / +3.0 points over the best from-scratch
+  student in int8 at a quarter of the compute (three times the parameters, 0.7 MB int8); float
+  clip-level AP equals the teacher's.
+- At the livable operating point (home budget 1/h) MN04 beats the XL DS-CNN on both axes:
+  75.2% vs 71.2% macro recall, 1.0 vs 1.8 alerts per hour, fire alarm 92% vs 89%.
+- It does not help the smallest networks: MN02 is level with the from-scratch M at equal compute,
+  and MN01 loses 13 points to int8 simulation.
+- Under recall-first ("tiered") MN04 is not better in the home (33 alerts/h): its alarm threshold
+  for 95% tuning recall is very low. Recall-first remains unlivable with every model.
