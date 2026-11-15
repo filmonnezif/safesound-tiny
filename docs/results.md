@@ -79,3 +79,26 @@ Findings:
   little slow loudness variation for PCEN to remove; it also quantises worse.
 - ESP32-S3 budget: L (36 M MACs, 93 KB) and XL (89 M MACs, 239 KB) both fit the planned
   memory (XL needs PSRAM or careful arena use); latency to be measured or estimated in phase 6.
+
+## Clip-level view (the usual literature metrics)
+
+`python -m safesound.cliplevel`: clip score = max over its windows; per class, positives =
+test clips with that class, negatives = every other test clip (99% of clips). Threshold for
+precision / recall / F1 / accuracy = best F1 on the tuning clips, applied to test.
+
+| Model | Size | AUC | AP | Precision | Recall | F1 | Accuracy |
+|---|---|---|---|---|---|---|---|
+| YAMNet, zero-shot | 3.7 M params | 0.948 | 0.635 | 64.0% | 60.0% | 61.0% | 99.20% |
+| CNN14, zero-shot | 80 M | 0.974 | 0.717 | 74.8% | 66.1% | 69.3% | 99.40% |
+| CNN14 fine-tuned (teacher) | 80 M | 0.978 | 0.731 | 74.3% | 66.6% | 68.8% | 99.42% |
+| Student S int8 | 6.7 KB | 0.950 | 0.490 | 51.7% | 52.4% | 51.5% | 98.93% |
+| Student M int8 | 21.5 KB | 0.962 | 0.592 | 61.5% | 55.5% | 57.5% | 99.06% |
+| Student L int8 | 93 KB | 0.965 | 0.650 | 68.9% | 58.3% | 62.4% | 99.20% |
+| Student XL int8 | 239 KB | 0.965 | 0.661 | 68.7% | 60.8% | 63.8% | 99.27% |
+
+- Accuracy is ~99% for every model because 99% of clips are negatives (a model that never
+  fires scores ~98.5%); it says nothing about quality for rare sounds.
+- The int8 XL student beats YAMNet (3.7 M params) on every clip-level metric.
+- Fine-tuning barely moves clip-level AP (0.717 -> 0.731) but doubles event recall at
+  0.1 FA/h (16.6% -> 35.8%): clip-level metrics hide the strict-false-alarm regime that matters
+  for a safety device. This motivates the event-level FA/h protocol.
