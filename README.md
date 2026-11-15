@@ -49,6 +49,12 @@ of real home audio without the target sounds (SINS, CHiME-Home, DCASE home scene
 | 6 | ESP32-S3 port (QEMU / host build first) | memory, flash, latency, power |
 | 7 | Paper | draft |
 
+## Status (2026-11-15)
+
+Phases 0-4 done; see [docs/results.md](docs/results.md). Best tiny model: distilled DS-CNN XL,
+239 KB int8, 32.4% / 59.3% event recall at 0.1 / 1 false alarm per hour (teacher 35.8% / 66.8%).
+Next: phase 5 (alarm pattern detector, temporal decoding), phase 6 (ESP32-S3).
+
 ## Layout
 
 ```

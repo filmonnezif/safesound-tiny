@@ -16,7 +16,7 @@ Per class at 1 FA/h (zero-shot CNN14 -> fine-tuned): alarm 89 -> 83, siren 81 ->
 doorbell 48 -> 59, knock 66 -> 75, baby cry 59 -> 47, car horn 53 -> 61.
 Fine-tuning mostly helps at the strict budget (0.1 FA/h: 16.6% -> 35.8%).
 
-## Phase 2: DSP simulation ablation (DS-CNN M, 45k params, hard labels, 2 runs each)
+## Phase 2: DSP simulation ablation (DS-CNN M, 21k params, hard labels, 2 runs each)
 
 | Config | Test @0.1 | Test @1 | Tuning @1 | runs (test @1) |
 |---|---|---|---|---|
@@ -54,6 +54,28 @@ away from it. The phase 4 teacher is chosen on tuning recall like everything els
 students are distilled from the raw-data teacher (they still train on simulation D inputs;
 the teacher labels the same simulated example).
 
-## Phase 4: distilled int8 students
+## Phase 4: distilled students (simulation D inputs, teacher = raw-data CNN14)
 
-(running)
+| Student | Params | MACs / inference | int8 weights | Test @0.1 | Test @1 | int8 @0.1 | int8 @1 |
+|---|---|---|---|---|---|---|---|
+| S (DS-CNN w32x4) | 6.3 k | 2.6 M | 6.7 KB | 10.3% | 45.1% | 11.1% | 42.7% |
+| M (w64x4) | 20.8 k | 8.8 M | 21.5 KB | 28.1% | 52.5% | 22.7% | 53.0% |
+| L (w128x5) | 92.4 k | 36.2 M | 93.0 KB | 28.2% | 57.8% | 27.8% | 57.1% |
+| **XL (w192x6)** | 239 k | 88.6 M | 239 KB | **32.4%** | **59.3%** | 28.6% | **59.5%** |
+| M, PCEN front end | 20.8 k | 8.8 M | 21.5 KB | 18.2% | 50.1% | 12.6% | 49.2% |
+| reference: M hard labels (phase 2 D, mean) | 20.8 k | 8.8 M | | 22.1% | 49.3% | | |
+| reference: teacher CNN14 (raw) | 80 M | ~ 2 G | | 35.8% | 66.8% | | |
+
+One inference = 2 s of audio; the device runs two per second.
+
+Findings:
+- Distillation helps the same network clearly: M 22.1% -> 28.1% at 0.1 FA/h and
+  49.3% -> 52.5% at 1 FA/h (tuning set agrees: 21.7-24.6% -> 28.6%, 46.7-47.9% -> 49.0%).
+- Recall grows with size; XL (239 KB int8) keeps 90% of the teacher's strict-budget recall
+  and 89% at 1 FA/h with 1/330 of its parameters, and beats YAMNet zero-shot at both budgets.
+- int8 (simulated TFLite scheme) is lossless at 1 FA/h for L and XL; at 0.1 FA/h it costs
+  0-6 points (M, XL). Quantisation-aware training is the next step.
+- PCEN is worse than log-mel here (M: 18.2% vs 28.1% at 0.1 FA/h). The evaluation audio has
+  little slow loudness variation for PCEN to remove; it also quantises worse.
+- ESP32-S3 budget: L (36 M MACs, 93 KB) and XL (89 M MACs, 239 KB) both fit the planned
+  memory (XL needs PSRAM or careful arena use); latency to be measured or estimated in phase 6.
