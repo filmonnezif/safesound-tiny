@@ -28,10 +28,14 @@ class SimData(IterableDataset):
             yield gen()
 
 
+def _low_priority(*_):
+    os.nice(10)   # leave the notebook server responsive on small machines
+
+
 def loader(data_root, cfg, batch, workers=None, seed=0):
-    workers = workers or max(1, os.cpu_count() - 2)
-    return iter(DataLoader(SimData(data_root, cfg, seed), batch_size=batch,
-                           num_workers=workers, pin_memory=True, prefetch_factor=4))
+    workers = workers or max(1, os.cpu_count() - 4)
+    return iter(DataLoader(SimData(data_root, cfg, seed), batch_size=batch, num_workers=workers,
+                           pin_memory=True, prefetch_factor=4, worker_init_fn=_low_priority))
 
 
 def gpu_features(x, kind):
@@ -114,7 +118,7 @@ def student_detector(model, kind):
         global _POOL
         if _POOL is None:
             import multiprocessing as mp
-            _POOL = mp.get_context("fork").Pool(min(32, os.cpu_count()))
+            _POOL = mp.get_context("fork").Pool(max(1, min(32, os.cpu_count() - 3)), initializer=_low_priority)
         wins = _POOL.map(_sw, [(x, kind) for x in batch])
         flat = torch.from_numpy(np.concatenate(wins)).cuda()
         p = torch.cat([torch.sigmoid(model(flat[i:i + 4096])) for i in range(0, len(flat), 4096)]).cpu().numpy()
