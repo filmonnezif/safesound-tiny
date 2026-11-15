@@ -164,3 +164,47 @@ On 2,929 windows of real test clips. Ops: CONV_2D, DEPTHWISE_CONV_2D, PAD, MEAN,
 ADD, SUB, MUL, FULLY_CONNECTED, all supported by TFLite Micro. The real int8 models agree with the
 simulated int8 used in phases 4-5, so those numbers stand. Files (and C arrays for ESP-IDF) are
 on Drive in `results/export/`. On-device latency and power: phase 6 (hardware).
+
+## Phase 5b: energy-saving wake gate, margins, confidence intervals (`python -m safesound.phase5b`)
+
+**Paired test (phase 1-4 protocol, 1 FA/h).** XL int8 minus YAMNet zero-shot: +4.0 points
+event recall, 95% paired-bootstrap CI [0.4, 7.6], P(diff <= 0) = 0.014.
+
+**Recall-first, with 95% bootstrap CIs (class-stratified over occurrences):**
+
+| Model | Thresholds | Macro recall [95% CI] | FA/h AudioSet / home | Targets met |
+|---|---|---|---|---|
+| XL int8 | tuning target | 91.2% [88.9, 93.2] | 95.7 / 13.7 | 3 / 6 |
+| XL int8 | target + 2 pts | 92.3% [90.2, 94.1] | 143.0 / 35.1 | 4 / 6 |
+| XL int8 | target + 4 pts | 95.0% [93.3, 96.6] | 208.7 / 100.7 | 5 / 6 |
+| XL int8 | tuning target + safety net (phase 5) | 95.5% | 205.3 / 16.3 | |
+| L int8 | tuning target | 91.5% [89.4, 93.5] | 96.3 / 12.0 | 3 / 6 |
+| Teacher | tuning target | 91.5% [89.4, 93.5] | 45.6 / 8.2 | 4 / 6 |
+| Teacher | target + 4 pts | 95.9% [94.4, 97.3] | 178.5 / 123.8 | 5 / 6 |
+
+The tuning-to-test shift costs 1-8 points of recall per class. Margins recover it, but buying
+the last points through lower thresholds is expensive in the home (13.7 -> 101 FA/h for XL);
+the class-agnostic loud-sound safety net reaches the same 95% recall at 16.3 FA/h in the home.
+
+**Wake gate (XL int8).** An always-on DSP gate decides every 0.5 s whether to run the classifier
+on the buffered last 2 s; after a trigger it stays open for H windows. Compute: XL = 177 M MAC/s
++ 1.3 M log-mel; gate G1 (time-domain energy jump) 0.03 M ops/s; gate G2 (all DSP evidence,
+1024-FFT every 10 ms) 5.4 M ops/s.
+
+| Gate | H | tau | Recall | Recall, onset in clip | Classifier duty home / AudioSet | Compute saved (home) | FA/h AudioSet / home |
+|---|---|---|---|---|---|---|---|
+| none | | | 91.2% | 86.1% | 100% / 100% | 0% | 95.7 / 13.7 |
+| G1 energy | 4 | 0.1 | 79.1% | 78.1% | 13% / 72% | 87% | 69.9 / 4.2 |
+| G2 DSP | 4 | 0.1 | 90.9% | 85.9% | 74% / 99% | 23% | 95.0 / 13.3 |
+| G2 DSP | 4 | 0.2 | 90.8% | 85.8% | 48% / 96% | 49% | 93.2 / 12.0 |
+| **G2 DSP** | **4** | **0.3** | **90.5%** | 85.4% | **37% / 92%** | **60%** | 90.5 / **10.3** |
+| G2 DSP | 4 | 0.4 | 89.6% | 83.7% | 29% / 87% | 68% | 86.8 / 8.5 |
+| G2 DSP | 4 | 0.5 | 88.0% | 82.1% | 23% / 81% | 74% | 80.9 / 6.8 |
+
+Findings:
+- A pure energy gate saves the most but loses 12 points of recall, also on events whose onset
+  is inside the clip: many safety sounds are not much louder than the room.
+- The DSP-evidence gate lets the classifier sleep 63% of the time in the real home for 0.7
+  points of recall (90.5% vs 91.2%, inside the CI), saving ~60% of the compute, and it removes a
+  quarter of the home false alarms. On busy YouTube audio the gate stays open (92%), as it should.
+- Hangover length (2-10 s) barely matters at a fixed tau.

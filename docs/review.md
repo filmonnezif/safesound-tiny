@@ -23,9 +23,9 @@ added), stronger baselines, and a far-field test set.
 
 | # | Weakness | Status |
 |---|---|---|
-| 1 | No energy argument for an always-listening wearable: the classifier runs 2x per second forever (XL: ~177 M MAC/s). | **Addressed:** DSP wake gates (phase 5b) that run the classifier only when something happens. |
-| 2 | Recall targets missed on test (doorbell 82% vs 90%, siren 90% vs 95%): tuning-to-test shift not compensated. | **Measured:** threshold margins (+2, +4 points on tuning) recover the targets but the last points of recall are very expensive (e.g. siren 90% -> 99% costs home FA 2 -> 99/h). Reported as a trade-off, not hidden. |
-| 3 | No confidence intervals for phase 5, no paired test for "beats YAMNet". | **Addressed:** class-stratified bootstrap CIs for macro recall; paired bootstrap XL int8 vs YAMNet at 1 FA/h. |
+| 1 | No energy argument for an always-listening wearable: the classifier runs 2x per second forever (XL: ~177 M MAC/s). | **Addressed:** DSP wake gate (phase 5b): classifier asleep 63% of the time in the real home, ~60% compute saved, recall 91.2% -> 90.5% (within CI), home FA -25%. A pure energy gate loses 12 points of recall and is rejected. |
+| 2 | Recall targets missed on test (doorbell 82% vs 90%, siren 90% vs 95%): tuning-to-test shift not compensated. | **Addressed:** margins of +4 points meet 5/6 targets (95.0% macro) but cost 101 FA/h in the home; the loud-sound safety net reaches 95.5% at 16.3 FA/h, so it is the recommended way to buy recall. |
+| 3 | No confidence intervals for phase 5, no paired test for "beats YAMNet". | **Addressed:** bootstrap CIs (XL recall-first 91.2% [88.9, 93.2]); paired bootstrap XL int8 vs YAMNet at 1 FA/h: +4.0 points [0.4, 7.6], p = 0.014. |
 | 4 | Baselines are 2019-2020 models (YAMNet, CNN14); EfficientAT / BEATs missing. | **Open** (GPU, ~2-3 h): run them zero-shot and fine-tuned under the same protocol. |
 | 5 | Simulation contribution is a null result on close-mic test audio. | **Open:** needs a far-field test set (e.g. re-recorded or public far-field data); stated as a limitation. |
 
