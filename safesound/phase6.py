@@ -64,7 +64,7 @@ class Mel16k(nn.Module):
         fb = kaldi_mel_banks()[:, : N_FFT // 2 + 1]                 # bins 0..8 kHz of the 32 kHz bank
         f = np.arange(N_FFT // 2 + 1) * 16000 / N_FFT
         pre = np.abs(1 - 0.97 * np.exp(-2j * np.pi * f / 32000)) ** 2   # 32 kHz pre-emphasis response
-        self.register_buffer("fb", torch.tensor(fb * pre[None, :] * 4.0))
+        self.register_buffer("fb", torch.tensor(fb * pre[None, :] * 4.0, dtype=torch.float32))
         self.register_buffer("window", torch.hann_window(WIN_LEN, periodic=False))
 
     def forward(self, x, specaug=False):
