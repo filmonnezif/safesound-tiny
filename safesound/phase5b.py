@@ -210,21 +210,30 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--data", type=Path, default=Path("/content/cache"))
-    ap.add_argument("--curve", action="store_true", help="only the gate trade-off curve (XL int8)")
+    ap.add_argument("--curve", action="store_true", help="only the gate trade-off curve")
+    ap.add_argument("--models", nargs="*", default=MODELS)
     a = ap.parse_args()
+    f6 = a.root / "results" / "phase6_summary.json"
+    if f6.exists():                                   # compute of the pretrained students
+        for k, v in json.load(open(f6)).items():
+            OPS_CLASSIFIER[k] = OPS_CLASSIFIER[k + "_int8"] = 2 * v["macs_per_inference"]
     if a.curve:
-        gate_curve(a.root, a.data)
+        for name in a.models:
+            gate_curve(a.root, a.data, name)
         return
     clips = {(s, k): bench.Clips(a.data, role) for s, roles in SPLITS.items() for k, role in roles.items()}
     dspd = {(s, k): load_scores(a.root, "dsp_v1", role) for s, roles in SPLITS.items() for k, role in roles.items()}
     p5 = json.load(open(a.root / "results" / "phase5.json"))
-    out = {"paired": paired_claims(a.root, clips) if (a.root / "scores" / "yamnet_zeroshot").exists() else {}}
-    for name in MODELS:
+    fo = a.root / "results" / "phase5b.json"
+    out = json.load(open(fo)) if fo.exists() else {}
+    if "paired" not in out:
+        out["paired"] = paired_claims(a.root, clips) if (a.root / "scores" / "yamnet_zeroshot").exists() else {}
+    for name in a.models:
         print(f"\n### {name}", flush=True)
         out[name] = run_model(name, a.root, clips, dspd, p5)
-        json.dump(out, open(a.root / "results" / "phase5b.json", "w"), indent=1)
+        json.dump(out, open(fo, "w"), indent=1)
     print("\n=== summary")
-    for name in MODELS:
+    for name in a.models:
         r = out[name]
         b = r["base_macro"]
         print(f"{name:22s} base   rec {b['recall']:.1%} {np.round(b['ci'], 3)} FA {b['fa_as']:.1f}/{b['fa_home']:.2f}")

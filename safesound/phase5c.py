@@ -146,12 +146,13 @@ def main():
     clips = {(s, k): bench.Clips(a.data, role) for s, roles in SPLITS.items() for k, role in roles.items()}
     dspd = {(s, k): load_scores(a.root, "dsp_v1", role) for s, roles in SPLITS.items() for k, role in roles.items()}
     p5 = json.load(open(a.root / "results" / "phase5.json"))
-    res = {}
+    suffix = "" if a.policy == "tiered" else f"_{a.policy}"
+    fo = a.root / "results" / f"phase5c{suffix}.json"
+    res = json.load(open(fo)) if fo.exists() else {}
     for name in a.models:
         print(f"\n### {name} policy {a.policy}", flush=True)
         res[name] = run(name, a.root, clips, dspd, p5, policy=POLICIES[a.policy])
-        suffix = "" if a.policy == "tiered" else f"_{a.policy}"
-        json.dump(res, open(a.root / "results" / f"phase5c{suffix}.json", "w"), indent=1)
+        json.dump(res, open(fo, "w"), indent=1)
 
 
 if __name__ == "__main__":

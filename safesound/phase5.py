@@ -212,17 +212,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--data", type=Path, default=Path("/content/cache"))
+    ap.add_argument("--models", nargs="*", default=MODELS)
     a = ap.parse_args()
     clips = {(s, k): bench.Clips(a.data, role) for s, roles in SPLITS.items() for k, role in roles.items()}
     print("DSP detector scores ...", flush=True)
     dspd = dsp_scores(a.data, a.root)
-    out = {}
-    for name in MODELS:
+    (a.root / "results").mkdir(parents=True, exist_ok=True)
+    f = a.root / "results" / "phase5.json"
+    out = json.load(open(f)) if f.exists() else {}
+    for name in a.models:
         print(f"\n### {name}", flush=True)
         run_model(name, a.data, a.root, clips, dspd, out)
-    (a.root / "results").mkdir(parents=True, exist_ok=True)
-    json.dump(out, open(a.root / "results" / "phase5.json", "w"), indent=1)
-    summarise(out)
+        json.dump(out, open(f, "w"), indent=1)
+    summarise({n: out[n] for n in a.models})
 
 
 if __name__ == "__main__":
