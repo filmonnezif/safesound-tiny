@@ -96,7 +96,8 @@ plot(tx, x, 'Color', [0.3 0.3 0.3]); xlim([0 tx(end)]);
 title(['Input: ' name], 'Interpreter', 'none'); ylabel('amplitude');
 
 subplot(4, 1, 2);
-imagesc(tf, f / 1000, PdB - median(PdB, 2));   % whitened: dB above each band's median axis xy; ylim([0 8]); colormap(gca, 'parula');
+imagesc(tf, f / 1000, PdB - median(PdB, 2));   % whitened: dB above each band's median
+axis xy; ylim([0 8]); colormap(gca, 'parula');
 caxis([0 25]);
 hold on; plot(tf([1 end]), [2 2], 'w--', tf([1 end]), [5 5], 'w--'); hold off;
 ylabel('kHz'); title('Whitened spectrogram (dB above each band''s median); dashed = alarm band 2-5 kHz');
