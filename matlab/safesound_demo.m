@@ -97,9 +97,9 @@ title(['Input: ' name], 'Interpreter', 'none'); ylabel('amplitude');
 
 subplot(4, 1, 2);
 imagesc(tf, f / 1000, PdB - NdB); axis xy; ylim([0 8]); colormap(gca, 'parula');
-caxis([0 30]); cb = colorbar; cb.Label.String = 'dB';
+caxis([0 30]);                          % 0-30 dB above floor
 hold on; plot(tf([1 end]), [2 2], 'w--', tf([1 end]), [5 5], 'w--'); hold off;
-ylabel('kHz'); title('Spectrogram, dB above the noise floor; dashed = alarm band 2-5 kHz');
+ylabel('kHz'); title('Spectrogram, 0-30 dB above the noise floor; dashed = alarm band 2-5 kHz');
 
 subplot(4, 1, 3);
 plot(tf, a, 'r', tf, loud, 'b'); ylim([-0.05 1.05]); xlim([0 tx(end)]);
