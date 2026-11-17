@@ -88,7 +88,7 @@ fprintf('  alarm detector on in %d windows, energy detector on in %d windows\n',
         sum(alert), sum(energyOn));
 
 %% 6) plots
-figure('Name', 'SafeSound DSP demo', 'Color', 'w', 'Position', [80 60 1000 760]);
+figure('Name', 'SafeSound DSP demo', 'Color', 'w');
 tx = (0:numel(x)-1) / fs;
 
 subplot(4, 1, 1);
@@ -97,6 +97,7 @@ title(['Input: ' name], 'Interpreter', 'none'); ylabel('amplitude');
 
 subplot(4, 1, 2);
 imagesc(tf, f / 1000, PdB); axis xy; ylim([0 8]); colormap(gca, 'parula');
+clim_ = [pct(PdB(:), 50), pct(PdB(:), 99.9)]; caxis(clim_);   % tones stand out
 hold on; plot(tf([1 end]), [2 2], 'w--', tf([1 end]), [5 5], 'w--'); hold off;
 ylabel('kHz'); title('Spectrogram (dB); dashed = alarm band 2-5 kHz');
 
@@ -119,10 +120,12 @@ legend('alarm score (2 s window)', 'energy detector fires', 'threshold', ...
        'ALARM alert', 'Location', 'northwest');
 title('Decision: shaded = alarm alert');
 
+ws = warning('off', 'all');                       % MATLAB Online prints audio warnings
 try
     sound(x / max(abs(x) + eps) * 0.8, fs);        % play what was analysed
 catch
 end
+warning(ws);
 end
 
 %% ---------------------------------------------------------------------------
