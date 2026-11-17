@@ -88,7 +88,7 @@ fprintf('  alarm detector on in %d windows, energy detector on in %d windows\n',
         sum(alert), sum(energyOn));
 
 %% 6) plots
-figure('Name', 'SafeSound DSP demo', 'Color', 'w', 'Units', 'normalized', 'Position', [0.05 0.05 0.6 0.85]);
+figure('Name', 'SafeSound DSP demo', 'Color', 'w', 'Position', [60 40 900 640]);
 tx = (0:numel(x)-1) / fs;
 
 subplot(4, 1, 1);
@@ -96,10 +96,10 @@ plot(tx, x, 'Color', [0.3 0.3 0.3]); xlim([0 tx(end)]);
 title(['Input: ' name], 'Interpreter', 'none'); ylabel('amplitude');
 
 subplot(4, 1, 2);
-imagesc(tf, f / 1000, PdB - NdB); axis xy; ylim([0 8]); colormap(gca, 'parula');
-caxis([0 30]);                          % 0-30 dB above floor
+imagesc(tf, f / 1000, PdB - median(PdB, 2));   % whitened: dB above each band's median axis xy; ylim([0 8]); colormap(gca, 'parula');
+caxis([0 25]);
 hold on; plot(tf([1 end]), [2 2], 'w--', tf([1 end]), [5 5], 'w--'); hold off;
-ylabel('kHz'); title('Spectrogram, 0-30 dB above the noise floor; dashed = alarm band 2-5 kHz');
+ylabel('kHz'); title('Whitened spectrogram (dB above each band''s median); dashed = alarm band 2-5 kHz');
 
 subplot(4, 1, 3);
 plot(tf, a, 'r', tf, loud, 'b'); ylim([-0.05 1.05]); xlim([0 tx(end)]);
