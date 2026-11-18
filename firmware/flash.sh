@@ -9,7 +9,9 @@ board=${1:-s3}
 port=${2:-$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -1)}
 [ -n "$port" ] || { echo "no board found: plug it in (use a data cable)"; exit 1; }
 if [ "$board" = esp32 ]; then fqbn=esp32:esp32:esp32
-else fqbn="esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB"; fi
+else fqbn="esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB"
+     # native USB port (ttyACM): print over USB-CDC
+     case "$port" in *ttyACM*) fqbn="$fqbn,CDCOnBoot=cdc,USBMode=hwcdc";; esac; fi
 echo "board $fqbn on $port"
 arduino-cli compile --fqbn "$fqbn" mic_test
 arduino-cli upload --fqbn "$fqbn" -p "$port" mic_test
