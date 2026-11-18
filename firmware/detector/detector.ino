@@ -55,6 +55,7 @@ static volatile bool netBusy = false;
 static volatile uint32_t skipped = 0;
 static QueueHandle_t alertQueue;                       // class indices to act on
 static volatile uint32_t awakeUntil = 0;               // millis() until which the wake LED is on
+static volatile float lastAbove = 0;                   // dB above the background (for the log)
 
 struct HP {                                             // 2nd-order Butterworth high-pass, 30 Hz
   float b0, b1, b2, a1, a2, z1 = 0, z2 = 0;
@@ -120,25 +121,28 @@ static void audioTask(void *) {
   static float buf[SS_NFFT];                            // last 512 samples
   float mel[SS_MELS];
   int filled = 0;
-  float floorDb = -60.0f;                               // tracked background level
+  float floorDb = -1000.0f, lvlS = -1000.0f;           // background floor, smoothed level (dB)
   const float rise = 6.0f * SS_HOP / SS_SR / 2.0f;      // floor rises 6 dB per 2 s
   for (;;) {
     size_t want = sizeof(raw), got = 0;
     while (got < want) got += i2s.readBytes((char *)raw + got, want - got);
-    float g = powf(10.0f, gainDb / 20.0f), e = 0;
+    float g = powf(10.0f, gainDb / 20.0f);
     memmove(buf, buf + SS_HOP, (SS_NFFT - SS_HOP) * sizeof(float));
-    for (int i = 0; i < SS_HOP; i++) {
-      float v = hp.step((raw[i] >> 8) / 8388608.0f) * g;
-      buf[SS_NFFT - SS_HOP + i] = v;
-      e += v * v;
-    }
-    // wake indicator: level 10 dB above the background floor, held 2 s
-    float lvl = 10.0f * log10f(e / SS_HOP + 1e-12f);
-    floorDb = lvl < floorDb ? lvl : floorDb + rise;
-    if (lvl - floorDb > 10.0f) awakeUntil = millis() + 2000;
+    for (int i = 0; i < SS_HOP; i++) buf[SS_NFFT - SS_HOP + i] = hp.step((raw[i] >> 8) / 8388608.0f) * g;
 
     if (filled < SS_NFFT) { filled += SS_HOP; if (filled < SS_NFFT) continue; }
     ss_frame(buf, mel);
+
+    // wake indicator: energy in the mel bands above ~200 Hz (the mic's sub-audio rumble would
+    // make a plain level jump around), smoothed over ~100 ms, compared with a background floor
+    // that drops at once and rises 6 dB per 2 s; awake = 10 dB above the floor, held 2 s
+    float e = 0;
+    for (int m = 4; m < SS_MELS; m++) e += expf(mel[m]) - 1.0f;
+    float lvl = 10.0f * log10f(e + 1.0f);
+    lvlS = (lvlS < -999.0f) ? lvl : 0.8f * lvlS + 0.2f * lvl;
+    floorDb = (floorDb < -999.0f || lvlS < floorDb) ? lvlS : floorDb + rise;
+    if (lvlS - floorDb > 10.0f) awakeUntil = millis() + 2000;
+    lastAbove = lvlS - floorDb;
     portENTER_CRITICAL(&mux);
     memcpy(ring[ringPos], mel, sizeof(mel));
     ringPos = (ringPos + 1) % SS_FRAMES;
@@ -175,7 +179,7 @@ static void networkTask(void *) {
     if (best >= 0) trigger(best);
 
     bool awake = (int32_t)(awakeUntil - millis()) > 0;
-    Serial.printf("t=%7.1f net=%4ums %s |", fc * 0.02f, ms, awake ? "AWAKE" : "idle ");
+    Serial.printf("t=%7.1f net=%4ums %s %+5.1fdB |", fc * 0.02f, ms, awake ? "AWAKE" : "idle ", lastAbove);
     for (int k = 0; k < SS_CLASSES; k++) Serial.printf(" %s %.2f", SS_NAMES[k], prob[k]);
     if (best >= 0) Serial.printf("  >>> ALERT %s", SS_NAMES[best]);
     if (skipped) Serial.printf("  (skipped %u)", skipped);
