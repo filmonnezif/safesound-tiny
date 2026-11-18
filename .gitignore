@@ -25,3 +25,4 @@ paper/*.blg
 paper/*.fls
 paper/*.fdb_latexmk
 paper/*.out
+firmware/assets/
