@@ -45,3 +45,16 @@ class passes its 1-false-alarm-per-hour threshold. `tools/export_model.py M` reg
 `detector/model.h` from the checkpoint; `tools/check_core.c` checks the C code against PyTorch
 (identical scores). The L student is better but takes 1.2 s per window on the board.
 Demo sounds and playback test: `demo_sounds/` and `tools/playback_test.py`.
+
+## Alert outputs (detector)
+
+| Part | Pin | ESP32-S3 |
+|---|---|---|
+| Servo SG90 (vibration) | brown / red / orange | GND / 5V / GPIO 14 |
+| RGB LED, common cathode | R / G / B via 220 ohm each | GPIO 21 / GPIO 47 / GPIO 1 |
+| RGB LED | long leg (cathode) | GND |
+| On-board RGB LED (GPIO 48) | wake indicator | built in |
+
+Colours: alarm red, siren blue, doorbell green, knock yellow, baby cry pink, car horn cyan.
+Rhythms: alarm 3 x 0.4 s, siren 1 x 1.5 s, doorbell 2 short, knock 3 quick, baby cry 2 long, horn 4 fast.
+Serial '0'..'5' tests one class's alert without sound.
