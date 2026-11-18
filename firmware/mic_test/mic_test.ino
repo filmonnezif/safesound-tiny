@@ -101,7 +101,7 @@ static void record() {                     // 5 s of 16-bit PCM to the PC
   for (int done = 0; done < total; done += N) {
     if (!readBlock(blk, N)) break;
     for (int i = 0; i < N; i++) {
-      float v = blk[i] * 16.0f;            // +24 dB so speech is not tiny in 16 bits
+      float v = blk[i] * 4.0f;             // +12 dB: speech fills 16 bits without clipping
       pcm[i] = (int16_t)constrain(v * 32767.0f, -32768.0f, 32767.0f);
     }
     int n = min(N, total - done);
