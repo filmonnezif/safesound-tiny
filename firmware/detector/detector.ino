@@ -190,6 +190,7 @@ static void networkTask(void *) {
 
 void setup() {
   Serial.begin(921600);
+  Serial.setTxTimeoutMs(0);                            // never block when no PC is reading the USB port
   delay(1500);
   Serial.println("\nSafeSound detector + servo + RGB");
   Serial.printf("model: width %d, blocks %d; PSRAM %u bytes\n", SS_WIDTH, SS_BLOCKS, ESP.getPsramSize());
