@@ -27,7 +27,7 @@ firmware/flash.sh                 # ESP32-S3; or: firmware/flash.sh esp32
 Use the USB-C port marked COM/UART if the board has two. If upload fails, hold BOOT,
 tap RESET, release BOOT, and run it again.
 
-Expected: lines like `-62.3  1250  ##########...` ten times a second; clapping makes the
+Expected: lines like `-58.3  125  ###############...` ten times a second (quiet room about -55 to -62 dBFS, voices -40 to -50); clapping makes the
 level jump to around -20 dBFS, whistling shows a steady peak frequency. A level stuck at
 -180 or the "only zeros" warning means a wiring fault.
 

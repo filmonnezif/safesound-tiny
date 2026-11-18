@@ -55,7 +55,24 @@ static void fft(float *x, float *y, int n) {          // in-place radix-2 FFT
   }
 }
 
-// read n mono samples, scaled to [-1, 1); returns false on a read error
+// 2nd-order Butterworth high-pass at 100 Hz (RBJ biquad): removes the sub-audio rumble
+// (handling, air, loose pins) that the INMP441 passes; the detector ignores < 100 Hz anyway
+struct Biquad {
+  float b0, b1, b2, a1, a2, z1 = 0, z2 = 0;
+  Biquad(float fc, float fs) {
+    float w = 2 * PI * fc / fs, c = cosf(w), al = sinf(w) / (2 * 0.7071f), a0 = 1 + al;
+    b0 = (1 + c) / 2 / a0; b1 = -(1 + c) / a0; b2 = b0; a1 = -2 * c / a0; a2 = (1 - al) / a0;
+  }
+  float step(float x) {                    // transposed direct form II
+    float y = b0 * x + z1;
+    z1 = b1 * x - a1 * y + z2;
+    z2 = b2 * x - a2 * y;
+    return y;
+  }
+};
+Biquad hp(100.0f, SR);
+
+// read n mono samples, scaled to [-1, 1) and high-passed; returns false on a read error
 static bool readBlock(float *out, int n) {
   size_t want = n * sizeof(int32_t), got = 0;
   while (got < want) {
@@ -63,7 +80,7 @@ static bool readBlock(float *out, int n) {
     if (r == 0) return false;
     got += r;
   }
-  for (int i = 0; i < n; i++) out[i] = (raw[i] >> 8) / 8388608.0f;   // 24-bit in 32-bit slot
+  for (int i = 0; i < n; i++) out[i] = hp.step((raw[i] >> 8) / 8388608.0f);   // 24-bit in 32-bit slot
   return true;
 }
 
@@ -136,7 +153,7 @@ void loop() {
 
   fft(re, im, N);
   int kmax = 1; float pmax = 0;
-  for (int k = 2; k < N / 2; k++) {                     // skip < 60 Hz
+  for (int k = 4; k < N / 2; k++) {                     // skip < 125 Hz
     float p = re[k] * re[k] + im[k] * im[k];
     if (p > pmax) { pmax = p; kmax = k; }
   }
