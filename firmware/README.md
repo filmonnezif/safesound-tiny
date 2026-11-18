@@ -36,3 +36,12 @@ Record 5 s to a WAV (close the monitor first with Ctrl+C):
 .venv/bin/python firmware/tools/record.py /dev/ttyUSB0 rec.wav
 ```
 then listen to it, or open it in MATLAB: `safesound_demo('rec.wav')`.
+
+## Detector (step 2, current)
+
+`detector/` runs the DS-CNN M student (float weights, 20 k parameters) on the board in real
+time: log-mel every 20 ms, network every 0.5 s on the last 2 s (327 ms per run), alert when a
+class passes its 1-false-alarm-per-hour threshold. `tools/export_model.py M` regenerates
+`detector/model.h` from the checkpoint; `tools/check_core.c` checks the C code against PyTorch
+(identical scores). The L student is better but takes 1.2 s per window on the board.
+Demo sounds and playback test: `demo_sounds/` and `tools/playback_test.py`.
